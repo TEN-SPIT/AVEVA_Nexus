@@ -41,6 +41,29 @@ namespace Nexus.Tests
             Program.Run("EnsureWritable_does_nothing_when_off", () =>
                 WithEnv("0", () => ReadOnlyMode.EnsureWritable()));
 
+            Program.Run("SetWritable_true_turns_read_only_off_for_the_running_process", () =>
+                WithEnv(null, () =>
+                {
+                    ReadOnlyMode.SetWritable(true);
+                    Check.True(!ReadOnlyMode.IsOn, "writable after SetWritable(true)");
+                    ReadOnlyMode.EnsureWritable();
+                }));
+
+            Program.Run("SetWritable_false_puts_read_only_back_on", () =>
+                WithEnv("0", () =>
+                {
+                    ReadOnlyMode.SetWritable(false);
+                    Check.True(ReadOnlyMode.IsOn, "read-only after SetWritable(false)");
+                    Check.Throws<AVEVA_Nexus.Exceptions.NexusException>(() => ReadOnlyMode.EnsureWritable(), "blocked again");
+                }));
+
+            Program.Run("SetWritable_false_overrides_an_environment_that_allowed_writing", () =>
+                WithEnv("0", () =>
+                {
+                    ReadOnlyMode.SetWritable(false);
+                    Check.Equal("1", Environment.GetEnvironmentVariable("NEXUS_READONLY"), "variable");
+                }));
+
             Program.Run("ReadOnlyMode_stays_on_for_any_other_value", () =>
             {
                 foreach (var v in new[] { "1", "", "false", "no", "00", " 0" })

@@ -1,0 +1,22 @@
+--|------------------------------------------------------------------------------------------------
+
+-- Devuelve la carpeta raiz de NexusMCP (la que contiene functions\, dll\ y uic\).
+-- Se deduce de la ruta de nexusstart.pmlfnc en el indice de PMLLIB, asi no hay rutas fijas.
+-- Devuelve '' si la carpeta no esta indexada en la PMLLIB.
+
+define function !!nexusroot() is string
+
+    !path = !!pml.getpathname('nexusstart.pmlfnc')
+    handle any
+        !path = ''
+    endhandle
+
+    !path = !path.replace('/', '\')
+    !idx  = !path.lowcase().match('\functions\')
+    if !idx GT 1 then
+        return !path.substring(1, !idx - 1)
+    endif
+
+    return ''
+
+endfunction

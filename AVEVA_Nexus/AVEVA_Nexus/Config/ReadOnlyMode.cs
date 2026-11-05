@@ -15,6 +15,14 @@ namespace AVEVA_Nexus.Config
             get { return Environment.GetEnvironmentVariable(VariableName) != "0"; }
         }
 
+        // Lets the E3D user switch the mode of a session that is already running (the button in the
+        // ribbon calls it through HostConfig). IsOn re-reads the variable on every request, so it
+        // takes effect immediately. It only changes this process's environment.
+        public static void SetWritable(bool writable)
+        {
+            Environment.SetEnvironmentVariable(VariableName, writable ? "0" : "1");
+        }
+
         public static void EnsureWritable()
         {
             if (IsOn)

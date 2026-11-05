@@ -22,8 +22,25 @@ namespace AVEVA_Nexus.Http
         private static string Token =>
             Environment.GetEnvironmentVariable("NEXUS_TOKEN");
 
+        public bool IsRunning
+        {
+            get
+            {
+                try { return _listener != null && _listener.IsListening; }
+                catch (ObjectDisposedException) { return false; }
+            }
+        }
+
         public void Start()
         {
+            // Starting twice used to replace the listener and the cancellation token under the loop that
+            // was already serving, which broke it. Starting a running gateway is now a no-op.
+            if (IsRunning)
+            {
+                Console.WriteLine("HTTP Server already running, Start ignored");
+                return;
+            }
+
             bool localOnly = Prefix.StartsWith("http://localhost")
                           || Prefix.StartsWith("http://127.0.0.1");
 
@@ -31,14 +48,17 @@ namespace AVEVA_Nexus.Http
                 throw new InvalidOperationException(
                     "NEXUS_TOKEN must be set when listening on non-local prefixes.");
 
-            _cts = new CancellationTokenSource();
+            var cts = new CancellationTokenSource();
+            var listener = new HttpListener();
+            listener.Prefixes.Add(Prefix);
+            listener.Start();   // throws if the port is taken; the fields below are only set on success
 
-            _listener = new HttpListener();
-            _listener.Prefixes.Add(Prefix);
+            _cts = cts;
+            _listener = listener;
 
-            _listener.Start();
-
-            Task.Run(() => ListenLoop());
+            // The loop gets its own listener and token, so a Stop followed by a Start cannot
+            // leave an old loop running against the new listener.
+            Task.Run(() => ListenLoop(listener, cts));
 
             Console.WriteLine( "HTTP Server Started : " + Prefix);
         }
@@ -56,21 +76,25 @@ namespace AVEVA_Nexus.Http
             Console.WriteLine("HTTP Server Stopped");
         }
 
-        private async Task ListenLoop()
+        private async Task ListenLoop(HttpListener listener, CancellationTokenSource cts)
         {
-            while (!_cts.IsCancellationRequested)
+            while (!cts.IsCancellationRequested)
             {
                 try
                 {
                     var context =
-                        await _listener.GetContextAsync();
+                        await listener.GetContextAsync();
 
                     _ = Task.Run(
                         () => ProcessRequest(context));
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine(ex.Message);
+                    Trace.Line(ex.Message);
+                    bool stillListening;
+                    try { stillListening = listener.IsListening; }
+                    catch (ObjectDisposedException) { stillListening = false; }
+                    if (!stillListening) break;   // closed under us: do not spin on the error
                 }
             }
         }
@@ -80,14 +104,14 @@ namespace AVEVA_Nexus.Http
         {
             try
             {
-                Console.WriteLine("========================================");
-                Console.WriteLine("HTTP REQUEST RECEIVED");
-                Console.WriteLine("========================================");
+                Trace.Line("========================================");
+                Trace.Line("HTTP REQUEST RECEIVED");
+                Trace.Line("========================================");
 
-                Console.WriteLine($"RawUrl       : {context.Request.RawUrl}");
-                Console.WriteLine($"AbsolutePath : {context.Request.Url.AbsolutePath}");
-                Console.WriteLine($"HttpMethod   : {context.Request.HttpMethod}");
-                Console.WriteLine($"Url          : {context.Request.Url}");
+                Trace.Line($"RawUrl       : {context.Request.RawUrl}");
+                Trace.Line($"AbsolutePath : {context.Request.Url.AbsolutePath}");
+                Trace.Line($"HttpMethod   : {context.Request.HttpMethod}");
+                Trace.Line($"Url          : {context.Request.Url}");
 
                 string path =
                     context.Request.Url.AbsolutePath;

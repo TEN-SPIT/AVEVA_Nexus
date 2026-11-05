@@ -6,13 +6,13 @@ namespace AVEVA_Nexus.Logging
     {
         public static void Info(string message)
         {
-            Console.WriteLine(
+            Trace.Line(
                 $"[{DateTime.Now:HH:mm:ss}] [INFO] {message}");
         }
 
         public static void Error(Exception ex)
         {
-            Console.WriteLine(
+            Trace.Line(
                 $"[{DateTime.Now:HH:mm:ss}] [ERROR] {ex}");
         }
     }

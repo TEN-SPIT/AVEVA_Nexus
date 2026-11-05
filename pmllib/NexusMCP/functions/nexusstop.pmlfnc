@@ -1,0 +1,28 @@
+--|------------------------------------------------------------------------------------------------
+
+-- Para Nexus en esta sesion de E3D. Lo llama el boton "Parar Nexus" o !!nexusstop().
+-- Deja el modo en solo lectura. No guarda ni libera claims: si Claude ha estado modificando el
+-- modelo, pidele antes que haga save_work (guarda y libera).
+
+define function !!nexusstop()
+
+    if not !!nexusisrunning() then
+        !!nexusmsg('Nexus no esta en marcha en esta sesion.', FALSE)
+        return
+    endif
+
+    -- vuelve a solo lectura (si la DLL es antigua no tiene el metodo; no importa)
+    !!nexusHost.SetWritable(FALSE)
+    handle any
+    endhandle
+
+    !!nexusHost.Stop()
+    handle any
+        !!nexusmsg('No se pudo parar Nexus.', TRUE)
+        return
+    endhandle
+    !!nexusRunning = FALSE
+
+    !!nexusmsg('Nexus parado. Si Claude modifico el modelo, recuerda guardar y liberar los claims antes de cerrar E3D.', FALSE)
+
+endfunction

@@ -18,19 +18,62 @@ namespace AVEVA_Nexus.Integration
             get { return _getCommand ?? (_getCommand = ac.Command.CreateCommand("")); }
         }
 
-        // Runs a PML command. RunInPdms() returns false for an invalid command (Command.Error carries no text),
-        // so a failure is reported with the command itself.
+        // Runs the lines as ONE temporary macro wrapped by PmlGuard, so a PML error is caught instead of opening
+        // E3D's modal alert (which hung a graphical E3D). Returns false if a line failed; message is then the text
+        // E3D gave for it (null if none could be read). Must be called inside AvevaGate.
+        private bool RunGuarded(IList<string> lines, out string message)
+        {
+            message = null;
+            string path = System.IO.Path.Combine(
+                System.IO.Path.GetTempPath(), "nexus-" + Guid.NewGuid().ToString("N") + ".pmlmac");
+            try
+            {
+                System.IO.File.WriteAllText(
+                    path, string.Join("\r\n", Scripts.PmlGuard.Wrap(lines)), new System.Text.UTF8Encoding(false));
+                bool ran = ac.Command.CreateCommand("$M/" + path.Replace('\\', '/')).RunInPdms();
+                if (!ran)
+                {
+                    // the macro itself could not run (not a PML error inside it)
+                    ac.Command.OutputAndClearError();
+                    return false;
+                }
+
+                bool failed = false;
+                try { failed = getCommand.GetPMLVariableBoolean(Scripts.PmlGuard.FailedVariable.ToUpper()); }
+                catch (Exception) { }
+                if (failed)
+                {
+                    try
+                    {
+                        string text = getCommand.GetPMLVariableString(Scripts.PmlGuard.MessageVariable.ToUpper());
+                        if (!string.IsNullOrWhiteSpace(text)) message = text.Trim();
+                    }
+                    catch (Exception) { }
+                }
+                return !failed;
+            }
+            finally
+            {
+                try { System.IO.File.Delete(path); } catch (Exception) { }
+            }
+        }
+
+        private static string WithMessage(string text, string message)
+        {
+            return message == null ? text : text + " [E3D: " + message + "]";
+        }
+
+        // Runs a PML command. A failure is reported with the command itself plus E3D's message when available.
         public bool ExecuteCommand(string command)
         {
             return AvevaGate.Run(() =>
             {
                 try
                 {
-                    ac.Command tempCommand = ac.Command.CreateCommand(command);
-                    if (!tempCommand.RunInPdms())
+                    string message;
+                    if (!RunGuarded(new[] { command }, out message))
                     {
-                        ac.Command.OutputAndClearError();
-                        throw new NexusException("PML command failed: " + command, 400);
+                        throw new NexusException(WithMessage("PML command failed: " + command, message), 400);
                     }
                     return true;
                 }
@@ -144,10 +187,11 @@ namespace AVEVA_Nexus.Integration
                     + (where != null ? " with (" + where + ")" : "")
                     + (scope != null ? " for " + scope : "");
 
-                if (!ac.Command.CreateCommand(command).RunInPdms())
+                string collectMessage;
+                if (!RunGuarded(new[] { command }, out collectMessage))
                 {
-                    ac.Command.OutputAndClearError();
-                    throw new NexusException("PML collect failed (check the where condition and scope): " + command, 400);
+                    throw new NexusException(WithMessage(
+                        "PML collect failed (check the where condition and scope): " + command, collectMessage), 400);
                 }
 
                 string[] refs = ac.Command.GetStringArrayFromPML("!!nexusQ");
@@ -168,13 +212,12 @@ namespace AVEVA_Nexus.Integration
                 var result = new RunResult();
                 foreach (ScriptUnit unit in units)
                 {
-                    bool ok = unit.IsBlock ? RunBlock(unit) : ac.Command.CreateCommand(unit.Lines[0]).RunInPdms();
-                    if (!ok)
+                    string message;
+                    if (!RunGuarded(unit.Lines, out message))
                     {
-                        ac.Command.OutputAndClearError();
-                        result.Errors.Add(unit.IsBlock
+                        result.Errors.Add(WithMessage(unit.IsBlock
                             ? "PML block failed (lines " + unit.FirstLine + "-" + unit.LastLine + "): " + unit.Lines[0]
-                            : "PML command failed: " + unit.Lines[0]);
+                            : "PML command failed: " + unit.Lines[0], message));
                     }
                 }
                 foreach (string name in returnVariables)
@@ -184,23 +227,6 @@ namespace AVEVA_Nexus.Integration
                 result.Ok = result.Errors.Count == 0;
                 return result;
             });
-        }
-
-        // An if/do/handle block only works as a whole, so it runs as a temporary macro ("$M/<file>"). A failing line
-        // makes RunInPdms() return false and stops the macro (the lines before it have already run).
-        private static bool RunBlock(ScriptUnit unit)
-        {
-            string path = System.IO.Path.Combine(
-                System.IO.Path.GetTempPath(), "nexus-" + Guid.NewGuid().ToString("N") + ".pmlmac");
-            try
-            {
-                System.IO.File.WriteAllText(path, string.Join("\r\n", unit.Lines), new System.Text.UTF8Encoding(false));
-                return ac.Command.CreateCommand("$M/" + path.Replace('\\', '/')).RunInPdms();
-            }
-            finally
-            {
-                try { System.IO.File.Delete(path); } catch (Exception) { }
-            }
         }
 
         // Typed read of a global variable: arrays as string[], REAL as double, BOOLEAN as bool, the rest as text.

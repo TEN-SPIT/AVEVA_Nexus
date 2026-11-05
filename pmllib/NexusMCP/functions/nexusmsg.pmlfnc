@@ -1,0 +1,21 @@
+--|------------------------------------------------------------------------------------------------
+
+-- Muestra un mensaje al usuario. Con interfaz grafica usa un aviso de E3D; sin ella (sesion TTY)
+-- lo escribe en la consola, para que las funciones de Nexus tambien se puedan probar sin graficos.
+--
+--     !!nexusmsg('texto', FALSE)     informacion
+--     !!nexusmsg('texto', TRUE)      error
+
+define function !!nexusmsg(!text is STRING, !iserror is BOOLEAN)
+
+    $P NEXUS: $!text
+
+    handle any
+        if !iserror then
+            !!alert.error(!text)
+        else
+            !!alert.message(!text)
+        endif
+    endhandle
+
+endfunction
