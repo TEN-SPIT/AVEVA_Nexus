@@ -162,7 +162,12 @@ def _known_project(project: str) -> dict:
     return projects[project]
 
 
-def start(project: str, writable: bool = False) -> dict:
+def project_port(project: str) -> int:
+    return int(_known_project(project)["port"])
+
+
+def start(project: str, writable: bool = False, on_wait=None) -> dict:
+    """Start a headless E3D. `on_wait(elapsed_s, total_s)` is called about every 5 s while waiting."""
     cfg = _known_project(project)
     port = int(cfg["port"])
 
@@ -205,7 +210,9 @@ def start(project: str, writable: bool = False) -> dict:
 
     log = LOCAL_DIR / "run" / project / "stdout.log"
     launched_at = time.time()
-    deadline = time.monotonic() + _START_TIMEOUT_SECONDS
+    started = time.monotonic()
+    deadline = started + _START_TIMEOUT_SECONDS
+    ticks = 0
     while time.monotonic() < deadline:
         if _health(port):
             if to_remember:
@@ -220,6 +227,9 @@ def start(project: str, writable: bool = False) -> dict:
                     "call forget_e3d_login and start again to get the dialog." if source == "stored" else "")
             raise ToolError(f"E3D refused to start: {failure}.{hint}")
         time.sleep(1)
+        ticks += 1
+        if on_wait and ticks % 5 == 0:
+            on_wait(int(time.monotonic() - started), _START_TIMEOUT_SECONDS)
     return {
         "status": "starting",
         "port": port,

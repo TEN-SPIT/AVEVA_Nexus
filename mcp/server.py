@@ -4,9 +4,14 @@ IMPORTANT: this server talks to Claude over stdout, so never use print() here.
 Log to stderr instead.
 """
 
-from mcp.server.mcpserver import MCPServer
-from mcp.server.mcpserver.exceptions import ToolError
+import asyncio
+import logging
 
+from mcp.server.mcpserver import Context, MCPServer
+from mcp.server.mcpserver.exceptions import ToolError
+from mcp.types import ToolAnnotations
+
+import audit
 import e3d_launcher
 import nexus_client
 import ops
@@ -14,9 +19,17 @@ import pml_dev
 import write_guard
 
 mcp = MCPServer("nexus")
+log = logging.getLogger("nexus-mcp")
+
+# Hints for clients (they are hints, not enforcement: the write guard is what enforces).
+READ_ONLY = ToolAnnotations(read_only_hint=True, destructive_hint=False, idempotent_hint=True, open_world_hint=False)
+DESTRUCTIVE = ToolAnnotations(read_only_hint=False, destructive_hint=True, idempotent_hint=False, open_world_hint=False)
+DESTRUCTIVE_IDEMPOTENT = ToolAnnotations(read_only_hint=False, destructive_hint=True, idempotent_hint=True, open_world_hint=False)
+FILE_WRITE = ToolAnnotations(read_only_hint=False, destructive_hint=False, idempotent_hint=True, open_world_hint=False)
+LAUNCH = ToolAnnotations(read_only_hint=False, destructive_hint=False, idempotent_hint=True, open_world_hint=False)
 
 
-@mcp.tool()
+@mcp.tool(annotations=READ_ONLY)
 def session_info() -> dict:
     """Return the active AVEVA E3D session: project, MDB, user, module, E3D version
     and whether Nexus is in read-only mode.
@@ -31,7 +44,7 @@ def _without_none(**fields):
     return {k: v for k, v in fields.items() if v is not None}
 
 
-@mcp.tool()
+@mcp.tool(annotations=READ_ONLY)
 def query_elements(
     type: str,
     scope: str | None = None,
@@ -71,7 +84,7 @@ def query_elements(
     return ops.compact_table(data) if compact else data
 
 
-@mcp.tool()
+@mcp.tool(annotations=READ_ONLY)
 def count_elements(type: str, scope: str | None = None, where: str | None = None, name_like: str | None = None) -> dict:
     """Count elements of a type without listing them: returns {"total": n}.
 
@@ -84,7 +97,7 @@ def count_elements(type: str, scope: str | None = None, where: str | None = None
     return {"total": data.get("Total")}
 
 
-@mcp.tool()
+@mcp.tool(annotations=READ_ONLY)
 def batch(requests: list[dict]) -> list[dict]:
     """Run several READ calls in one round-trip (up to 50). Use it instead of many separate tool calls.
 
@@ -100,7 +113,7 @@ def batch(requests: list[dict]) -> list[dict]:
     return ops.batch(requests)
 
 
-@mcp.tool()
+@mcp.tool(annotations=READ_ONLY)
 def resolve_names(names: list[str]) -> list[dict | None]:
     """Turn element names into dbrefs and types: [{"Name", "Dbref", "Type"}], null for a name that
     does not exist.
@@ -112,7 +125,7 @@ def resolve_names(names: list[str]) -> list[dict | None]:
     return ops.resolve_names(names)
 
 
-@mcp.tool()
+@mcp.tool(annotations=READ_ONLY)
 def element_tree(ref: str, depth: int = 2, type: str | None = None, limit: int = 500) -> dict:
     """Return a whole subtree in one call instead of repeated list_children.
 
@@ -128,7 +141,7 @@ def element_tree(ref: str, depth: int = 2, type: str | None = None, limit: int =
     return ops.element_tree(ref, depth, type, limit)
 
 
-@mcp.tool()
+@mcp.tool(annotations=READ_ONLY)
 def describe_element(ref: str) -> dict:
     """One-stop "what is this element": name, type, owner, the common attributes that exist for
     its type (DESC, FUNC, PURP, POS, ORI, BORE, PSPEC, ...; unset ones omitted) and a children
@@ -141,7 +154,7 @@ def describe_element(ref: str) -> dict:
     return ops.describe_element(ref)
 
 
-@mcp.tool()
+@mcp.tool(annotations=DESTRUCTIVE)
 def pml_eval(expressions: list[str]) -> dict:
     """Evaluate PML expressions and return their values, e.g. ["1 + 2", "NAME OF /SITE-A",
     "UPCASE(|abc|)"]. Result: {"values": [...], "ok"} (+ "errors", "log" when something failed).
@@ -154,7 +167,7 @@ def pml_eval(expressions: list[str]) -> dict:
     return ops.pml_eval(expressions)
 
 
-@mcp.tool()
+@mcp.tool(annotations=DESTRUCTIVE)
 def call_pml_function(name: str, args: list[str | int | float | bool] | None = None, returns: bool = True) -> dict:
     """Call a PML function (a saved sandbox one such as mcpecho, or one from PMLLIB) and return
     {"ok", "value", "errors", "log"}.
@@ -172,7 +185,7 @@ def call_pml_function(name: str, args: list[str | int | float | bool] | None = N
     return ops.call_pml_function(name, args, returns)
 
 
-@mcp.tool()
+@mcp.tool(annotations=READ_ONLY)
 def get_attributes(refs: list[str], attributes: list[str]) -> dict:
     """Read several attributes of several known elements in one call.
 
@@ -188,7 +201,7 @@ def get_attributes(refs: list[str], attributes: list[str]) -> dict:
     )
 
 
-@mcp.tool()
+@mcp.tool(annotations=READ_ONLY)
 def list_children(ref: str, type: str | None = None) -> dict:
     """Navigate the E3D hierarchy: return an element's owner and its direct children.
 
@@ -203,7 +216,7 @@ def list_children(ref: str, type: str | None = None) -> dict:
     )
 
 
-@mcp.tool()
+@mcp.tool(annotations=READ_ONLY)
 def attribute_list(type: str) -> dict:
     """List the valid attributes of an E3D element type (system attributes first,
     then user-defined ones starting with ':').
@@ -215,7 +228,7 @@ def attribute_list(type: str) -> dict:
     return nexus_client.call("GET", "/api/Element/AttributeList", params={"type": type})
 
 
-@mcp.tool()
+@mcp.tool(annotations=DESTRUCTIVE)
 def run_pml(script: str, variables: list[str] | None = None) -> dict:
     """Run a PML script in the live E3D session and read back global variables, with the
     real E3D messages.
@@ -242,7 +255,7 @@ def run_pml(script: str, variables: list[str] | None = None) -> dict:
     return write_guard.guarded_run(script, variables)
 
 
-@mcp.tool()
+@mcp.tool(annotations=DESTRUCTIVE_IDEMPOTENT)
 def save_work(db: str) -> dict:
     """Commit (SAVEWORK) the pending changes of ONE database, and only if it is one this MCP
     is allowed to write.
@@ -258,7 +271,7 @@ def save_work(db: str) -> dict:
     return write_guard.save_work(db)
 
 
-@mcp.tool()
+@mcp.tool(annotations=FILE_WRITE)
 def save_pml(kind: str, name: str, content: str) -> dict:
     """Save PML source code into the test sandbox so it can be loaded and run in E3D.
 
@@ -278,10 +291,11 @@ def save_pml(kind: str, name: str, content: str) -> dict:
     - name: e.g. "mcpecho".
     - content: the full PML source of the file.
     """
-    return pml_dev.save(kind, name, content)
+    with audit.entry("save_pml", script=content, detail=f"{kind} {name}"):
+        return pml_dev.save(kind, name, content)
 
 
-@mcp.tool()
+@mcp.tool(annotations=DESTRUCTIVE_IDEMPOTENT)
 def delete_pml(kind: str, name: str) -> dict:
     """Delete a file previously saved with save_pml. The function or object stays loaded in
     the running session until E3D is restarted.
@@ -289,16 +303,17 @@ def delete_pml(kind: str, name: str) -> dict:
     - kind: "function", "object" or "form".
     - name: the same name used in save_pml.
     """
-    return pml_dev.delete(kind, name)
+    with audit.entry("delete_pml", detail=f"{kind} {name}"):
+        return pml_dev.delete(kind, name)
 
 
-@mcp.tool()
+@mcp.tool(annotations=READ_ONLY)
 def list_pml() -> dict:
     """List the files currently in the PML test sandbox (what save_pml has written)."""
     return pml_dev.listing()
 
 
-@mcp.tool()
+@mcp.tool(annotations=READ_ONLY)
 def e3d_projects() -> dict:
     """List the E3D projects this machine can start, with project code, MDB, module and port.
 
@@ -308,7 +323,7 @@ def e3d_projects() -> dict:
     return e3d_launcher.list_projects()
 
 
-@mcp.tool()
+@mcp.tool(annotations=DESTRUCTIVE_IDEMPOTENT)
 def forget_e3d_login(project: str) -> dict:
     """Delete the E3D password stored for a project in the Windows Credential Manager, so the
     next start_e3d shows the login dialog again. Use it when start_e3d reports the stored
@@ -319,8 +334,8 @@ def forget_e3d_login(project: str) -> dict:
     return e3d_launcher.forget_login(project)
 
 
-@mcp.tool()
-def start_e3d(project: str, writable: bool = False) -> dict:
+@mcp.tool(annotations=LAUNCH)
+async def start_e3d(project: str, writable: bool = False, ctx: Context | None = None) -> dict:
     """Start a headless E3D session with Nexus for a configured project and wait until
     Nexus answers (about 30 s, up to 2 min).
 
@@ -338,10 +353,28 @@ def start_e3d(project: str, writable: bool = False) -> dict:
       PML that changes the model, and is refused unless the user has whitelisted the
       project; never ask for it on a production project without the user's say-so.
     """
-    return e3d_launcher.start(project, writable)
+    loop = asyncio.get_running_loop()
+
+    def on_wait(elapsed: int, total: int) -> None:  # called from the worker thread
+        if ctx is not None:
+            asyncio.run_coroutine_threadsafe(
+                ctx.report_progress(elapsed, total, f"Waiting for Nexus ({elapsed} s)"), loop
+            )
+
+    if ctx is not None:
+        await ctx.info(f"Starting E3D project {project} ({'writable' if writable else 'read-only'}); "
+                       "a login dialog may open on the user's screen.")
+    with audit.entry("start_e3d", project=project, detail=f"writable={writable}") as record:
+        # The launch waits for E3D (30 s to minutes): keep the event loop free meanwhile.
+        result = await asyncio.to_thread(e3d_launcher.start, project, writable, on_wait)
+        record["status"] = result.get("status", "ok")
+    if result.get("port"):
+        # Later calls must reach the Nexus of THIS project, not the one NEXUS_URL named at startup.
+        nexus_client.use_project_port(result["port"])
+    return result
 
 
-@mcp.tool()
+@mcp.tool(annotations=DESTRUCTIVE_IDEMPOTENT)
 def stop_e3d(project: str, force: bool = False) -> dict:
     """Stop the headless E3D session started by start_e3d.
 
@@ -356,15 +389,24 @@ def stop_e3d(project: str, force: bool = False) -> dict:
     - project: a name from e3d_projects.
     - force: stop anyway, accepting orphan claims. Only with the user's explicit say-so.
     """
-    pending = [] if force else write_guard.claims_pending()
-    if pending:
-        raise ToolError(
-            f"{len(pending)} element(s) are still claimed by this session ({', '.join(pending[:5])}). "
-            "Stopping now would leave them claimed and nobody else could edit them. Call save_work for "
-            "their database first, or stop_e3d with force=true if the user accepts that."
-        )
-    return e3d_launcher.stop(project)
+    port = e3d_launcher.project_port(project)  # also rejects unknown projects
+    with audit.entry("stop_e3d", project=project, detail=f"force={force}"):
+        pending = [] if force else write_guard.claims_pending(port)  # claims of THIS project's session
+        if pending is None:
+            raise ToolError(
+                "Cannot tell whether the session still holds claimed elements (Nexus answered but the log "
+                "with the claim list was not captured). Stopping could leave orphan claims. Check with "
+                "run_pml ('Q CLAIMLIST') or call stop_e3d with force=true if the user accepts that."
+            )
+        if pending:
+            raise ToolError(
+                f"{len(pending)} element(s) are still claimed by this session ({', '.join(pending[:5])}). "
+                "Stopping now would leave them claimed and nobody else could edit them. Call save_work for "
+                "their database first, or stop_e3d with force=true if the user accepts that."
+            )
+        return e3d_launcher.stop(project)
 
 
 if __name__ == "__main__":
+    audit.configure_logging()
     mcp.run()  # stdio transport by default

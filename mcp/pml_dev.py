@@ -37,12 +37,81 @@ _KINDS = {
     "form": ("frm", ".pmlfrm", re.compile(r"setup\s+form\s+!!(\w+)", re.IGNORECASE)),
 }
 _NAME = re.compile(r"^mcp[a-z0-9_]{0,40}$")
-# SAVEWORK can be abbreviated (SAV, SAVE, SAVEW...); any statement starting with "sav" counts.
-SAVE_COMMAND = re.compile(r"(?im)(?:^|;)\s*sav\w*")
+
+# ---- static scan of PML text ---------------------------------------------------------------
+# BEST EFFORT ONLY. PML can build commands at run time (`$!x` expansion, macros, computed names),
+# so no static scan can prove a script harmless. The real barrier is that saving goes only through
+# save_work (which checks the database) and that Nexus itself is read-only unless the user allowed
+# writing. This scan catches the obvious ways around that, and mistakes, early.
+#
+# Text is first cleaned: string literals (|..|, '..', "..") are blanked and comments (`--`, `$*`)
+# are cut, so words inside them are never flagged. Then a word counts as a COMMAND only where a
+# statement can start: line start, after `;`, after then/else/do/any (`handle any`), after `)`
+# (`handle (n,m)`), or after a `$x` command prefix other than `$P` (which just prints text).
+# Words after `/` (names), `:` (attributes), `!` or `.` are therefore never flagged.
+_STATEMENT_START = r"(?:^|;|\b(?i:then|else|do|any)\b|\)|\$[A-OQ-Za-oq-z]\s+|\$\s+)\s*"
+# SAVEWORK is refused wherever it stands as a bare word, not only at a statement start: PML has more
+# places where a command can follow on the same line (one-line do loops...) than this scan models.
+# Bare means not glued to a name (/), attribute (:), variable (!), method (.), $ prefix or a hyphenated word.
+_SAVE_CMD = re.compile(r"(?<![\w/:!.$@\-])(?i:sav\w*)\b")
+_SYNONYM_CMD = re.compile(_STATEMENT_START + r"\$[sS]\b")
+_MACRO_CMD = re.compile(_STATEMENT_START + r"\$[mM]\b")
+_EXPAND_CMD = re.compile(_STATEMENT_START + r"\$!")
+_ALPHA_LOG = re.compile(_STATEMENT_START + r"(?i:alp\w*\s+log)\b")
+_FILE_IO = re.compile(
+    r"(?i)\bobject\s+(?:file|[\w.]*\bio\b)|\.\s*(?:writefile|readfile|open|writerecord|readrecord|"
+    r"writeline|readline|copyfile|deletefile|appendfile)\s*\("
+)
+_PRINT_TEXT = re.compile(r"(?i)^((?:[^;]*;)*?\s*)\$p\b[^;]*")
+
+
+def _clean(text: str) -> list[str]:
+    """Lines of `text` with strings blanked and comments removed, text of $P lines dropped."""
+    out = []
+    for line in text.replace("\r", "").split("\n"):
+        res, i = [], 0
+        while i < len(line):
+            ch = line[i]
+            if ch in "|'\"":
+                end = line.find(ch, i + 1)
+                if end != -1:
+                    res.append('""')
+                    i = end + 1
+                    continue
+            elif line.startswith("--", i) or line.startswith("$*", i):
+                break
+            res.append(ch)
+            i += 1
+        # `$P free text` only prints: its words are text, not commands (what follows a `;` still counts).
+        out.append(_PRINT_TEXT.sub(r"\1$P", "".join(res)))
+    return out
+
+
+def has_save_command(text: str) -> bool:
+    """True if the text runs SAVEWORK (or an abbreviation such as SAV/SAVEW) as a command."""
+    return any(_SAVE_CMD.search(line) for line in _clean(text))
+
+
+def forbidden_in_writable(text: str) -> str | None:
+    """Reason why `text` may not run in a writable session, or None. Best effort (see above)."""
+    for line in _clean(text):
+        if _SAVE_CMD.search(line):
+            return "SAVEWORK is not allowed inside run_pml. Use the save_work tool, which only saves allowed databases."
+        if _MACRO_CMD.search(line):
+            return "Running macros ($M) is not allowed: a macro could contain commands this server cannot check."
+        if _SYNONYM_CMD.search(line):
+            return "Defining synonyms ($S) is not allowed: a synonym can hide a command this server cannot check."
+        if _EXPAND_CMD.search(line):
+            return "Running a command built from a variable ($!x / $!!x as a statement) is not allowed: it cannot be checked."
+        if _FILE_IO.search(line):
+            return "File input/output (object FILE, .open/.writefile ...) is not allowed in writable runs."
+        if _ALPHA_LOG.search(line):
+            return "ALPHA LOG is not allowed: the server owns the log file."
+    return None
 
 
 def _is_local() -> bool:
-    return urlparse(nexus_client.NEXUS_URL).hostname in ("localhost", "127.0.0.1", "::1")
+    return urlparse(nexus_client.base_url()).hostname in ("localhost", "127.0.0.1", "::1")
 
 
 def _read_log(path: Path) -> str:
@@ -86,7 +155,7 @@ def _check(kind: str, name: str) -> tuple[Path, re.Pattern]:
     if kind not in _KINDS:
         raise ToolError(f"Unknown kind '{kind}'. Use one of: {', '.join(_KINDS)}.")
     name = name.lower()
-    if not _NAME.match(name):
+    if not _NAME.fullmatch(name):
         raise ToolError(
             "Names must be lowercase, start with 'mcp' and use only letters, digits and '_' "
             "(for example 'mcpecho'). The prefix guarantees test code never replaces a real tool."
@@ -102,11 +171,14 @@ def save(kind: str, name: str, content: str) -> dict:
 
     if len(content.encode("utf-8")) > MAX_FILE_BYTES:
         raise ToolError(f"File too large (max {MAX_FILE_BYTES} bytes).")
-    if SAVE_COMMAND.search(content):
+    if has_save_command(content):
         raise ToolError(
             "Test code may not contain SAVEWORK: saving goes only through the save_work tool, "
             "which checks the database. A saved function could otherwise bypass that."
         )
+    reason = forbidden_in_writable(content)
+    if reason and "SAVEWORK" not in reason:
+        raise ToolError(f"Test code refused: {reason}")
     defined = {n.lower() for n in pattern.findall(content)}
     if defined != {name}:
         raise ToolError(

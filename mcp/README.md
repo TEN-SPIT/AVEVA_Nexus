@@ -68,11 +68,12 @@ Forms cannot be loaded in a headless session (`GRAPHICS OFF`), so keep logic in 
 ## Environment variables
 | Variable | Default | Meaning |
 |---|---|---|
-| `NEXUS_URL` | `http://localhost:5001` | Where Nexus listens |
+| `NEXUS_URL` | `http://localhost:5001` | Where Nexus listens at startup. After `start_e3d` (started or already running) the client follows that project's `port` on the same host, unless `NEXUS_URL` is set explicitly to a non-local host |
 | `NEXUS_TOKEN` | empty | Sent as `X-Nexus-Token` (needed when Nexus is not on localhost) |
 | `NEXUS_LOCAL_DIR` | `AVEVA_Nexus_local` next to the repository clone | Folder with the start/stop scripts and `config\projects.json` |
 | `NEXUS_WRITABLE_PROJECTS` | empty | Comma-separated project keys for which `start_e3d(writable=true)` is allowed |
 | `NEXUS_PML_SANDBOX` | `C:\Temp\PMLRepos\_mcp_sandbox` | Where `save_pml` writes |
+| `NEXUS_AUDIT_LOG` | `%LOCALAPPDATA%\NexusMCP\audit.jsonl` | Append-only audit trail (see Security model) |
 
 ## Security model
 - Nexus starts **read-only** and blocks `PML/Execute` and `PML/Run`. Writing needs `writable=true`
@@ -91,6 +92,27 @@ Forms cannot be loaded in a headless session (`GRAPHICS OFF`), so keep logic in 
   releases saved elements), and `stop_e3d` refuses to kill a session that still holds claims, because
   that leaves orphan claims nobody else can edit until an administrator releases them. `force=true`
   overrides it.
+- **What the pre-run scan refuses in a writable run** (best effort, a static text scan that cannot see
+  through values computed at run time; the commit gate above is the real barrier): `SAVEWORK` and any
+  abbreviation (`sav...`) where a statement can start (line start, after `;`, `then`, `else`, `handle
+  any`, a `$x` prefix); `$M` macros; `$!x` / `$!!x` used as a command; file I/O (`object FILE`,
+  `.open(`/`.writefile(`...); `ALPHA LOG` (the server owns the log). Words inside strings and comments,
+  names (`/SAVER-01`) and attributes (`:SAVINGS`) are not flagged. The same scan covers `run_pml`,
+  `pml_eval`, `call_pml_function` and the content of `save_pml`.
+- **Fail closed.** A script that refers to more than 60 distinct elements is refused (split it). If the
+  E3D log cannot be read (Nexus on another machine, a temp path with spaces, empty log) a writable
+  script that names elements is refused because their databases cannot be checked. `stop_e3d` also
+  refuses when the claim list cannot be read (unknown is not "none"), unless `force=true`; it checks
+  the claims of the project being stopped (its own port).
+- **Connection errors.** A dropped connection (E3D restarted) gives "Connection to Nexus lost". Reads
+  (GET and read-only POST routes, `Batch` of reads) are retried once; PML routes never are.
+- **Audit log.** Every write-capable call (`run_pml`/`pml_eval`/`call_pml_function` in a writable
+  session, `save_work`, `save_pml`, `delete_pml`, `start_e3d`, `stop_e3d`) appends one JSON line to
+  `NEXUS_AUDIT_LOG`: UTC time, tool, project, MDB, sha256 and first 200 characters of the script, and
+  the outcome. No passwords or tokens are ever recorded. Python logging goes to stderr.
+- **Tool annotations.** Every tool declares MCP annotations (read-only for reads; destructive for
+  `save_work`, `stop_e3d`, `delete_pml`, `run_pml`, `pml_eval`, `call_pml_function`). They are hints
+  for the client; the guard enforces. `start_e3d` is asynchronous and reports progress while waiting.
 - **Credentials are never stored.** `projects.json` holds no password. `start_e3d` opens a Windows
   credential dialog; the password goes from the dialog to E3D through environment variables and never
   through a tool argument, so the model does not see it. A project can set `"auth": "windows"` to log
