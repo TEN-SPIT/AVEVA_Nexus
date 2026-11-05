@@ -10,7 +10,7 @@ New-Item -ItemType Directory -Force $out | Out-Null
 
 # Only folders/files that must never reference Aveva.* namespaces.
 $pure = @()
-foreach ($d in 'Exceptions', 'Validation', 'Models', 'Query') {
+foreach ($d in 'Exceptions', 'Validation', 'Models', 'Query', 'Scripts') {
     $p = Join-Path $src $d
     if (Test-Path $p) { $pure += (Get-ChildItem $p -Filter *.cs).FullName }
 }

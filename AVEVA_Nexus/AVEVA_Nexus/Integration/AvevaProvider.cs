@@ -161,17 +161,20 @@ namespace AVEVA_Nexus.Integration
             });
         }
 
-        public RunResult RunScript(IList<string> lines, IList<string> returnVariables)
+        public RunResult RunScript(IList<ScriptUnit> units, IList<string> returnVariables)
         {
             return AvevaGate.Run(() =>
             {
                 var result = new RunResult();
-                foreach (string line in lines)
+                foreach (ScriptUnit unit in units)
                 {
-                    if (!ac.Command.CreateCommand(line).RunInPdms())
+                    bool ok = unit.IsBlock ? RunBlock(unit) : ac.Command.CreateCommand(unit.Lines[0]).RunInPdms();
+                    if (!ok)
                     {
                         ac.Command.OutputAndClearError();
-                        result.Errors.Add("PML command failed: " + line);
+                        result.Errors.Add(unit.IsBlock
+                            ? "PML block failed (lines " + unit.FirstLine + "-" + unit.LastLine + "): " + unit.Lines[0]
+                            : "PML command failed: " + unit.Lines[0]);
                     }
                 }
                 foreach (string name in returnVariables)
@@ -181,6 +184,23 @@ namespace AVEVA_Nexus.Integration
                 result.Ok = result.Errors.Count == 0;
                 return result;
             });
+        }
+
+        // An if/do/handle block only works as a whole, so it runs as a temporary macro ("$M/<file>"). A failing line
+        // makes RunInPdms() return false and stops the macro (the lines before it have already run).
+        private static bool RunBlock(ScriptUnit unit)
+        {
+            string path = System.IO.Path.Combine(
+                System.IO.Path.GetTempPath(), "nexus-" + Guid.NewGuid().ToString("N") + ".pmlmac");
+            try
+            {
+                System.IO.File.WriteAllText(path, string.Join("\r\n", unit.Lines), new System.Text.UTF8Encoding(false));
+                return ac.Command.CreateCommand("$M/" + path.Replace('\\', '/')).RunInPdms();
+            }
+            finally
+            {
+                try { System.IO.File.Delete(path); } catch (Exception) { }
+            }
         }
 
         // Typed read of a global variable: arrays as string[], REAL as double, BOOLEAN as bool, the rest as text.

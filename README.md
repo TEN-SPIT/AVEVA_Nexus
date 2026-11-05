@@ -366,8 +366,13 @@ POST /api/PML/Run
 ```
 
 Runs the lines in order and then reads the listed global variables (names without `!!`). A failing line is
-recorded in `Errors` and the rest still run; the HTTP status stays 200. Each line is a separate PML command, so
-multi-line blocks (`if`/`do`/`define function`) are not supported yet.
+recorded in `Errors` and the rest still run; the HTTP status stays 200. Plain lines run one by one. An
+`if ... endif`, `do ... enddo` or `handle ... endhandle` block (nested blocks included, keywords in any case)
+runs as a whole through a temporary macro file; if a line inside fails, the block stops there and is reported as
+`PML block failed (lines 2-5): <first line>`. A block that is never closed, or an `endif`/`enddo`/`endhandle`
+with no opening, is rejected with 400 (`... line N ...`). Comment lines (`--`) and blank lines are ignored.
+`define function/method/object/form` is not supported here: PML only accepts those from files on the `PMLLIB`
+path.
 
 ```json
 { "Success": true, "Data": { "Ok": true, "Errors": [], "Values": { "a": "abc", "n": 42.0 } } }

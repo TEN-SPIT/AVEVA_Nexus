@@ -35,9 +35,10 @@ namespace AVEVA_Nexus.Integration
         // System attributes then UDAs (e.g. ":TP-MTO-AREA") valid for an element type. 400 if the type is unknown.
         string[] GetAttributeNames(string type);
 
-        // Runs each line in order (a failing line is recorded and the rest still run), then reads the requested
-        // global variables (names without "!!"). Caller must have checked read-only mode and validated the names.
-        RunResult RunScript(IList<string> lines, IList<string> returnVariables);
+        // Runs each unit in order (a failing line or block is recorded and the rest still run), then reads the
+        // requested global variables (names without "!!"). Plain lines run one by one; an if/do/handle block runs as
+        // a whole. Caller must have checked read-only mode and validated the names.
+        RunResult RunScript(IList<ScriptUnit> units, IList<string> returnVariables);
 
         // Project, MDB, user, module and version of the running session; anything unavailable is null.
         // (ReadOnly is filled in by the service.)

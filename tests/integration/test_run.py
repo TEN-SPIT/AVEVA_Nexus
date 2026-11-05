@@ -40,6 +40,53 @@ def test_run_undefined_return_is_null(api):
     assert body["Data"]["Values"]["nxNeverDefined"] is None
 
 
+def test_run_if_else_block(api):
+    script = "!!nxIfA = 5\nif (!!nxIfA gt 3) then\n  !!nxIfB = |big|\nelse\n  !!nxIfB = |small|\nendif"
+    status, body = run(api, script, ["nxIfB"])
+    assert status == 200
+    assert body["Data"]["Ok"] is True and body["Data"]["Errors"] == []
+    assert body["Data"]["Values"]["nxIfB"] == "big"
+
+
+def test_run_do_loop_and_nested_block(api):
+    script = "!!nxLoopS = 0\ndo !i from 1 to 4\n  if (!i ne 2) then\n    !!nxLoopS = !!nxLoopS + !i\n  endif\nenddo"
+    status, body = run(api, script, ["nxLoopS"])
+    assert status == 200 and body["Data"]["Ok"] is True
+    assert body["Data"]["Values"]["nxLoopS"] == 8  # 1 + 3 + 4
+
+
+def test_run_block_error_is_reported_with_its_lines_and_later_lines_still_run(api):
+    script = "!!nxBlkP = |1|\nif (!!nxBlkP eq |1|) then\n  var !!nxIfBad current MDB\n  !!nxBlkInside = |x|\nendif\n!!nxIfAfter = |ok|"
+    status, body = run(api, script, ["nxIfAfter", "nxBlkInside"])
+    assert status == 200
+    data = body["Data"]
+    assert data["Ok"] is False
+    assert len(data["Errors"]) == 1
+    assert "PML block failed" in data["Errors"][0] and "lines 2-5" in data["Errors"][0]
+    assert data["Values"]["nxIfAfter"] == "ok"      # the line after the block still ran
+    assert data["Values"]["nxBlkInside"] is None     # the block stopped at its failing line
+
+
+def test_run_unterminated_block_and_stray_end_are_400(api):
+    status, body = run(api, "!!nxIfA = 1\nif (!!nxIfA eq 1) then\n!!nxIfB = 2")
+    assert status == 400 and "line 2" in body["Error"]
+    status, body = run(api, "!!nxIfA = 1\nendif")
+    assert status == 400 and "line 2" in body["Error"]
+    assert api("GET", "/api/Health")[0] == 200
+
+
+def test_run_leaves_no_temporary_macro_behind(api):
+    import glob
+    import os
+    import tempfile
+
+    before = set(glob.glob(os.path.join(tempfile.gettempdir(), "nexus-*.pmlmac")))
+    run(api, "if (1 eq 1) then\n  !!nxTmp = |x|\nendif")
+    run(api, "if (1 eq 1) then\n  var !!nxIfBad current MDB\nendif")
+    after = set(glob.glob(os.path.join(tempfile.gettempdir(), "nexus-*.pmlmac")))
+    assert after == before
+
+
 def test_parallel_runs_do_not_interleave_variables(api):
     import concurrent.futures
 

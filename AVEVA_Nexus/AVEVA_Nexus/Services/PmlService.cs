@@ -8,6 +8,7 @@ using System.Threading.Tasks;
 using AVEVA_Nexus.Exceptions;
 using AVEVA_Nexus.Integration;
 using AVEVA_Nexus.Models;
+using AVEVA_Nexus.Scripts;
 
 namespace AVEVA_Nexus.Services
 {
@@ -34,11 +35,8 @@ namespace AVEVA_Nexus.Services
                 throw new NexusException("script is required", 400);
             }
 
-            List<string> lines = request.Script.Replace("\r", "").Split('\n')
-                .Select(l => l.Trim())
-                .Where(l => l.Length > 0)
-                .ToList();
-            if (lines.Count > MaxScriptLines)
+            List<ScriptUnit> units = ScriptSplitter.Split(request.Script);
+            if (units.Sum(u => u.Lines.Count) > MaxScriptLines)
             {
                 throw new NexusException("script too long (max " + MaxScriptLines + " lines)", 400);
             }
@@ -48,7 +46,7 @@ namespace AVEVA_Nexus.Services
                 .Distinct()
                 .ToList();
 
-            return _provider.RunScript(lines, names);
+            return _provider.RunScript(units, names);
         }
 
         public string GetString(string name)
