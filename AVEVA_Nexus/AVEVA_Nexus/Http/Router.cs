@@ -13,11 +13,13 @@ namespace AVEVA_Nexus.Http
     {
         private readonly PmlController _pml;
         private readonly ElementController _element;
+        private readonly SessionController _session;
 
         public Router()
         {
             _pml = new PmlController();
             _element = new ElementController();
+            _session = new SessionController();
         }
 
         //public object Route(RouteContext context)
@@ -94,6 +96,11 @@ namespace AVEVA_Nexus.Http
                     400);
             }
 
+            if (segments[1].Equals("Health", StringComparison.OrdinalIgnoreCase))
+            {
+                return new ApiResponse { Success = true, Data = "ok" };
+            }
+
             Console.WriteLine($"Root Segment = {segments[0]}");
             Console.WriteLine($"Module       = {segments[1]}");
 
@@ -113,6 +120,14 @@ namespace AVEVA_Nexus.Http
                 return RouteElement(context, segments);
             }
 
+            if (segments[1].Equals("Session", StringComparison.OrdinalIgnoreCase) &&
+                segments.Length >= 3 &&
+                segments[2].Equals("Info", StringComparison.OrdinalIgnoreCase))
+            {
+                RequireMethod(context, "GET");
+                return _session.Info();
+            }
+
             throw new NexusException(
                 $"Route Not Found. Module '{segments[1]}' not supported.",
                 404);
@@ -130,6 +145,13 @@ namespace AVEVA_Nexus.Http
             {
                 return _pml.Execute(
                     context.Body);
+            }
+
+            if (segments.Length >= 3 &&
+                segments[2].Equals("Run", StringComparison.OrdinalIgnoreCase))
+            {
+                RequireMethod(context, "POST");
+                return _pml.Run(context.Body);
             }
 
             if (segments.Length >= 5 &&
@@ -168,11 +190,47 @@ namespace AVEVA_Nexus.Http
         }
 
 
+        private static void RequireMethod(RouteContext context, string method)
+        {
+            if (!string.Equals(context.Method, method, StringComparison.OrdinalIgnoreCase))
+            {
+                throw new NexusException($"Method {context.Method} not allowed; use {method}", 405);
+            }
+        }
+
         private object RouteElement(
             RouteContext context,
             string[] segments)
         {
             Console.WriteLine("Inside RouteElement");
+
+            if (segments.Length >= 3 &&
+                segments[2].Equals("Query", StringComparison.OrdinalIgnoreCase))
+            {
+                RequireMethod(context, "POST");
+                return _element.Query(context.Body);
+            }
+
+            if (segments.Length >= 3 &&
+                segments[2].Equals("Get", StringComparison.OrdinalIgnoreCase))
+            {
+                RequireMethod(context, "POST");
+                return _element.Get(context.Body);
+            }
+
+            if (segments.Length >= 3 &&
+                segments[2].Equals("Children", StringComparison.OrdinalIgnoreCase))
+            {
+                RequireMethod(context, "GET");
+                return _element.Children(context.Query["dbref"], context.Query["type"]);
+            }
+
+            if (segments.Length >= 3 &&
+                segments[2].Equals("AttributeList", StringComparison.OrdinalIgnoreCase))
+            {
+                RequireMethod(context, "GET");
+                return _element.AttributeList(context.Query["type"]);
+            }
 
             if (segments.Length >= 3 &&
                 segments[2].Equals(

@@ -1,10 +1,14 @@
-﻿using System;
+﻿using AVEVA_Nexus.Validation;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
+using AVEVA_Nexus.Exceptions;
 using AVEVA_Nexus.Integration;
+using AVEVA_Nexus.Models;
+using AVEVA_Nexus.Scripts;
 
 namespace AVEVA_Nexus.Services
 {
@@ -22,24 +26,47 @@ namespace AVEVA_Nexus.Services
             return _provider.ExecuteCommand(command);
         }
 
+        private const int MaxScriptLines = 500;
+
+        public RunResult Run(RunRequest request)
+        {
+            if (request == null || string.IsNullOrWhiteSpace(request.Script))
+            {
+                throw new NexusException("script is required", 400);
+            }
+
+            List<ScriptUnit> units = ScriptSplitter.Split(request.Script);
+            if (units.Sum(u => u.Lines.Count) > MaxScriptLines)
+            {
+                throw new NexusException("script too long (max " + MaxScriptLines + " lines)", 400);
+            }
+
+            List<string> names = (request.Return ?? new List<string>())
+                .Select(PmlInputValidator.VariableName)
+                .Distinct()
+                .ToList();
+
+            return _provider.RunScript(units, names);
+        }
+
         public string GetString(string name)
         {
-            return _provider.GetStringVariable(name);
+            return _provider.GetStringVariable(PmlInputValidator.VariableName(name));
         }
 
         public double GetReal(string name)
         {
-            return _provider.GetRealVariable(name);
+            return _provider.GetRealVariable(PmlInputValidator.VariableName(name));
         }
 
         public bool GetBoolean(string name)
         {
-            return _provider.GetBooleanVariable(name);
+            return _provider.GetBooleanVariable(PmlInputValidator.VariableName(name));
         }
 
         public object[] GetArray(string name)
         {
-            return _provider.GetArrayVariable(name);
+            return _provider.GetArrayVariable(PmlInputValidator.VariableName(name));
         }
     }
 }

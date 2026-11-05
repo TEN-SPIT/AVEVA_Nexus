@@ -197,14 +197,16 @@ Success Response
 }
 ```
 
-Failure Response
+Failure Response (HTTP 400; PML errors used to be reported as `success: true`)
 
 ```json
 {
   "success": false,
-  "error": "Command execution failed"
+  "error": "PML command failed: Q MDBX"
 }
 ```
+
+`Execute` is blocked (HTTP 403) while Nexus is in read-only mode, which is the default; see [Environment variables](#environment-variables).
 
 ---
 
@@ -339,6 +341,113 @@ Response
 
 ---
 
+## Generic query APIs
+
+All responses use the standard `ApiResponse` envelope. Property names in `Data` are as shown. `dbref` values look
+like `=123/45`. Unknown element types return 400 (they are checked against the real E3D types first). Attribute
+values are E3D text (`350mm`, `unset`); an attribute that does not exist is `null`.
+
+### Health
+
+```http
+GET /api/Health
+```
+
+No token required. `Data` is `"ok"`.
+
+### Run a PML script
+
+```http
+POST /api/PML/Run
+```
+
+```json
+{ "script": "!!a = |abc|\n!!n = 42", "return": ["a", "n"] }
+```
+
+Runs the lines in order and then reads the listed global variables (names without `!!`). A failing line is
+recorded in `Errors` and the rest still run; the HTTP status stays 200. Plain lines run one by one. An
+`if ... endif`, `do ... enddo` or `handle ... endhandle` block (nested blocks included, keywords in any case)
+runs as a whole through a temporary macro file; if a line inside fails, the block stops there and is reported as
+`PML block failed (lines 2-5): <first line>`. A block that is never closed, or an `endif`/`enddo`/`endhandle`
+with no opening, is rejected with 400 (`... line N ...`). Comment lines (`--`) and blank lines are ignored.
+`define function/method/object/form` is not supported here: PML only accepts those from files on the `PMLLIB`
+path.
+
+```json
+{ "Success": true, "Data": { "Ok": true, "Errors": [], "Values": { "a": "abc", "n": 42.0 } } }
+```
+
+`Values` are typed: text, number, boolean or a list (arrays); `null` for a variable that is not defined.
+Blocked (403) in read-only mode.
+
+### Query elements
+
+```http
+POST /api/Element/Query
+```
+
+```json
+{
+  "type": "PIPE",
+  "scope": "=123/45",
+  "where": "(BORE GT 300)",
+  "attributes": ["NAME", "BORE", ":MY-UDA"],
+  "limit": 100,
+  "offset": 0
+}
+```
+
+`type` is required. `scope` is a dbref or a name starting with `/` (optional; 404 if it does not exist). `where` is
+a PML condition (optional). It is checked, not trusted: the text inside `'...'` and `|...|` strings is treated as
+data, and outside strings `;`, line breaks, `$`, `!` (PML variables), method calls and words such as `SAVEWORK`,
+`DELETE`, `NEW`, `OBJECT` are rejected, as are unbalanced parentheses and unterminated strings. This is a
+reasonable safeguard, not a guarantee; read-only mode should not be the only thing between an untrusted client
+and the model. `limit` defaults to 100 and is capped at 1000. The result is a table:
+
+```json
+{ "Total": 4, "Offset": 0, "Limit": 100, "Columns": ["dbref", "NAME", "BORE"],
+  "Rows": [ { "dbref": "=123/46", "NAME": "/PIPE-1", "BORE": "350mm" } ] }
+```
+
+### Read attributes of several elements
+
+```http
+POST /api/Element/Get
+```
+
+```json
+{ "refs": ["=123/46", "=123/47"], "attributes": ["NAME", "TYPE"] }
+```
+
+Same table shape, rows in the order of `refs` (max 1000). A dbref that does not exist gives 404.
+
+### Children of an element
+
+```http
+GET /api/Element/Children?dbref==123/1&type=ZONE
+```
+
+`type` is optional. `Data`: `{ "Owner": "=...", "Children": [ { "dbref", "type", "name" } ] }`.
+
+### Attribute names of a type
+
+```http
+GET /api/Element/AttributeList?type=PIPE
+```
+
+`Data` is a list: system attributes first, then UDAs (`:NAME`).
+
+### Session info
+
+```http
+GET /api/Session/Info
+```
+
+`Data`: `Project`, `Mdb`, `User`, `Module`, `E3dVersion`, `ReadOnly`. Fields E3D cannot report are `null`.
+
+---
+
 # Standard API Response
 
 ## Success
@@ -401,10 +510,28 @@ Exception
 400 Bad Request
 ```
 
+### Unauthorized
+
+```text
+401 Unauthorized        missing or wrong X-Nexus-Token (when NEXUS_TOKEN is set)
+```
+
+### Forbidden
+
+```text
+403 Forbidden           PML execution while Nexus is in read-only mode
+```
+
 ### Resource Not Found
 
 ```text
 404 Not Found
+```
+
+### Method Not Allowed
+
+```text
+405 Method Not Allowed  e.g. GET on a POST-only endpoint
 ```
 
 ### Internal Error
@@ -459,6 +586,47 @@ Notes:
 - Ensure the configured port is available and not being used by another application.
 - Verify firewall and network settings if remote access is required.
 - Review server logs for troubleshooting and diagnostics.
+
+---
+
+## Environment variables
+
+Read from the environment of the E3D process.
+
+| Variable | Effect |
+|---|---|
+| `NEXUS_READONLY` | Read-only is **on unless this is exactly `0`**. In read-only mode `PML/Execute` and `PML/Run` answer 403; queries and variable reads keep working. |
+| `NEXUS_TOKEN` | If set, every request except `GET /api/Health` must send it in the `X-Nexus-Token` header, and browser clients are allowed (CORS `*`). Required when the listener is not on `localhost`. If **not** set, any request that carries an `Origin` header (a web page in a browser) is refused with 403 and no CORS headers are sent, so other web pages cannot read the model through your browser. The token travels in clear over plain HTTP. |
+| `NEXUS_PORT` | If set, the addin starts the HTTP server by itself on `http://+:<port>/` when it loads (no macro needed). Not covered by the tests yet; the supported way to start a session is still the launcher/macro. |
+
+All calls into E3D are serialised through one lock: simultaneous requests used to crash the E3D session.
+
+## Breaking changes (compared with the original project)
+
+- `POST /api/PML/Execute` and `POST /api/PML/Run` return 403 unless `NEXUS_READONLY=0`.
+- A failing `Execute` returns 400 (it used to answer `success: true`).
+- `GET /api/PML/Variable/Array/{name}` keeps the PML order and returns every element as text.
+- Variable names in the URL must match `[A-Za-z0-9_.]{1,64}`.
+- Without `NEXUS_TOKEN`, requests with an `Origin` header are refused.
+
+## Build and test
+
+Windows, PowerShell, E3D 3.1 installed (its DLLs are used as references) and Visual Studio 2022 Build Tools
+(Roslyn `csc.exe`; the .NET Framework compiler is C# 5 and cannot build this project).
+
+```powershell
+scripts\build.ps1                    # -> out\AVEVA_Nexux_Addin.dll
+scripts\run-tests.ps1                # unit tests, no E3D needed
+scripts\deploy-local.ps1 -Target <runtime folder> -Project <code> [-Writable]   # rebuild and restart a local E3D TTY session
+python -m pytest tests/integration -m "not readonly"   # against a session started with -Writable
+python -m pytest tests/integration -m "not writable"   # against a session started in the default read-only mode
+```
+
+The integration tests expect a running Nexus on `http://localhost:5001` (override with `NEXUS_URL` / `NEXUS_TOKEN`)
+and any project that has a site with zones holding pipes (they discover their own test elements); they skip themselves when it is not reachable. `<runtime folder>` is the folder that holds the
+launcher scripts for your E3D project (`Start-Nexus.ps1`, `Stop-Nexus.ps1`, `config\`, `bin\`).
+
+Findings about the E3D APIs that shaped this design are in `docs/superpowers/notes/2026-11-05-pml-api-findings.md`.
 
 ---
 
