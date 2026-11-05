@@ -1,0 +1,26 @@
+--|------------------------------------------------------------------------------------------------
+
+-- Puerto en el que Nexus escucha (o escuchara) en esta sesion, como texto:
+-- !!nexusPort si esta definido; si no, la variable de entorno NEXUS_PORT; si no, 5001.
+-- Lo usan !!nexusstart() y el panel !!nexusmcp.
+
+define function !!nexusport() is STRING
+
+    !port = '5001'
+
+    -- OJO: el nombre de la variable va entre comillas; sin ellas PML corta en el '_' y falla.
+    !envport = ''
+    var !envport evar 'NEXUS_PORT'
+    handle any
+    endhandle
+    if !envport.length() GT 0 then
+        !port = !envport
+    endif
+
+    !port = !!nexusPort.string()
+    handle any
+    endhandle
+
+    return !port
+
+endfunction

@@ -1,6 +1,6 @@
 <#
   package-pmllib.ps1 - assembles the NexusMCP folder that goes into the project PMLLIB:
-  the PML functions and the .uic from pmllib\NexusMCP, plus the Nexus DLLs.
+  the PML functions, the panel form (forms\nexusmcp.pmlfrm) and the .uic from pmllib\NexusMCP, plus the Nexus DLLs.
 
   Usage:  .\scripts\package-pmllib.ps1 [-Runtime <dir>] [-DllDir <folder with AVEVA_Nexux_Addin.dll>] [-Out <folder>]
 
@@ -41,10 +41,13 @@ New-Item -ItemType Directory -Force (Join-Path $dest 'dll') | Out-Null
 Copy-Item (Join-Path $src '*') $dest -Recurse -Force
 Copy-Item (Join-Path $DllDir 'AVEVA_Nexux_Addin.dll'), (Join-Path $DllDir 'Newtonsoft.Json.dll') (Join-Path $dest 'dll')
 
-# PML files must be CRLF
-Get-ChildItem $dest -Recurse -Include *.pmlfnc | ForEach-Object {
+# PML files must be CRLF. Forms keep a UTF-8 BOM: without it E3D reads the file as ANSI and the accents break.
+Get-ChildItem $dest -Recurse -Include *.pmlfnc, *.pmlfrm | ForEach-Object {
     $text = [IO.File]::ReadAllText($_.FullName) -replace "`r?`n", "`r`n"
-    [IO.File]::WriteAllText($_.FullName, $text, (New-Object Text.UTF8Encoding($false)))
+    [IO.File]::WriteAllText($_.FullName, $text, (New-Object Text.UTF8Encoding($_.Extension -eq '.pmlfrm')))
+}
+foreach ($sub in 'functions', 'forms', 'uic') {
+    if (-not (Test-Path (Join-Path $dest $sub))) { throw "Package incomplete: missing $sub\" }
 }
 
 "Package ready: $dest"

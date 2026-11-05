@@ -8,7 +8,7 @@
 --     !!nexusstart(FALSE)     solo lectura
 --
 -- Usa el usuario y el modelo de la sesion actual: no pide contrasena.
--- Puerto: 5001, o el valor de !!nexusPort si esta definido, o el de la variable de entorno NEXUS_PORT.
+-- Puerto: el de !!nexusport() (!!nexusPort, si no la variable de entorno NEXUS_PORT, si no 5001).
 -- Solo escucha en localhost. Se puede pulsar varias veces: si ya esta en marcha no lo vuelve a arrancar,
 -- solo aplica el modo pedido.
 --
@@ -18,20 +18,9 @@
 
 define function !!nexusstart(!writable is BOOLEAN)
 
-    -- puerto
     -- patron usado en toda la funcion: valor por defecto, intento, y 'handle any' solo para recuperarse.
     -- (No se usa 'elsehandle none': se comporta de forma distinta si antes hubo otro error.)
-    !port = '5001'
-    !envport = ''
-    var !envport evar NEXUS_PORT
-    handle any
-    endhandle
-    if !envport.length() GT 0 then
-        !port = !envport
-    endif
-    !port = !!nexusPort.string()
-    handle any
-    endhandle
+    !port = !!nexusport()
 
     if not !!nexusisrunning() then
 
@@ -44,13 +33,21 @@ define function !!nexusstart(!writable is BOOLEAN)
         endhandle
 
         if not !ready then
-            -- DLL junto a esta funcion: <raiz>\dll\AVEVA_Nexux_Addin.dll
-            !root = !!nexusroot()
-            if !root.length() EQ 0 then
-                !!nexusmsg('NexusMCP no esta en la PMLLIB: no encuentro nexusstart.pmlfnc. Copia la carpeta a la PMLLIB y haz PML REHASH ALL.', TRUE)
-                return
+            -- DLL: la de !!nexusDll si esta definida (la pone la macro de arranque del lanzador, ruta sin
+            -- extension); si no, la que va junto a esta funcion: <raiz>\dll\AVEVA_Nexux_Addin.dll
+            !dll = ''
+            !dll = !!nexusDll
+            handle any
+                !dll = ''
+            endhandle
+            if !dll.length() EQ 0 then
+                !root = !!nexusroot()
+                if !root.length() EQ 0 then
+                    !!nexusmsg('NexusMCP no esta en la PMLLIB: no encuentro nexusstart.pmlfnc. Copia la carpeta a la PMLLIB y haz PML REHASH ALL.', TRUE)
+                    return
+                endif
+                !dll = !root & '\dll\AVEVA_Nexux_Addin'
             endif
-            !dll = !root & '\dll\AVEVA_Nexux_Addin'
             !dllfile = object FILE(!dll & '.dll')
             if not !dllfile.exists() then
                 !!nexusmsg('Falta ' & !dll & '.dll', TRUE)
@@ -79,6 +76,7 @@ define function !!nexusstart(!writable is BOOLEAN)
     endif
 
     -- modo: se aplica siempre de forma explicita, tanto al arrancar como si ya estaba en marcha
+    !url = !!nexusurl()
     !modeok = TRUE
     !!nexusHost.SetWritable(!writable)
     handle any
@@ -86,16 +84,18 @@ define function !!nexusstart(!writable is BOOLEAN)
     endhandle
 
     if !modeok then
+        -- lo recuerda para el panel cuando la DLL es antigua (sin IsWritable)
+        !!nexusWritable = !writable
         if !writable then
-            !!nexusmsg('Nexus activo en http://localhost:' & !port & '/  con ESCRITURA permitida. Claude puede modificar el modelo, solo en las bases autorizadas en el MCP.', FALSE)
+            !!nexusmsg('Nexus activo en ' & !url & '  con ESCRITURA permitida. Claude puede modificar el modelo, solo en las bases autorizadas en el MCP.', FALSE)
         else
-            !!nexusmsg('Nexus activo en http://localhost:' & !port & '/  en SOLO LECTURA.', FALSE)
+            !!nexusmsg('Nexus activo en ' & !url & '  en SOLO LECTURA.', FALSE)
         endif
     else
         if !writable then
             !!nexusmsg('Nexus esta activo pero esta version de la DLL no permite cambiar el modo en caliente: sigue en SOLO LECTURA. Cierra E3D y vuelve a abrirlo con la DLL nueva (carpeta NexusMCP actualizada).', TRUE)
         else
-            !!nexusmsg('Nexus activo en http://localhost:' & !port & '/ (modo segun el entorno de E3D, por defecto SOLO LECTURA).', FALSE)
+            !!nexusmsg('Nexus activo en ' & !url & ' (modo segun el entorno de E3D, por defecto SOLO LECTURA).', FALSE)
         endif
     endif
 

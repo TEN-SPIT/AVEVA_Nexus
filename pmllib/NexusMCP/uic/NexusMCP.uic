@@ -3,49 +3,19 @@
   <Version>1.0</Version>
   <FormsMetaData />
   <Tools>
-    <ButtonTool Name="User.nexus-start">
+    <ButtonTool Name="User.nexus-panel">
       <Command>
         <Type>Macro</Type>
-        <Macro>!!nexusstart(TRUE)</Macro>
-        <Key>Macro:c03ade8a-5862-48e5-a4f0-671da96fa86d</Key>
-        <Arguments />
-      </Command>
-      <ImageResourceId>AvevaSharedIcons:ID_ROTATE2</ImageResourceId>
-      <Caption>Iniciar Nexus</Caption>
-      <HelpContext />
-      <Tooltip>Inicia Nexus en esta sesion con permiso de escritura, para que Claude (MCP) pueda conectarse y modificar</Tooltip>
-      <TooltipFormattedText>&lt;p&gt;Inicia Nexus en esta sesion de E3D con permiso de ESCRITURA. Usa tu usuario y no pide contrasena. El MCP solo escribe en las bases autorizadas.&lt;/p&gt;</TooltipFormattedText>
-      <TooltipTitle>Iniciar Nexus (escritura)</TooltipTitle>
-      <DisplayStyle>Default</DisplayStyle>
-    </ButtonTool>
-    <ButtonTool Name="User.nexus-start-ro">
-      <Command>
-        <Type>Macro</Type>
-        <Macro>!!nexusstart(FALSE)</Macro>
-        <Key>Macro:83be1c3f-7fa7-4d26-a333-574e9533cff1</Key>
+        <Macro>!!nexuspanel()</Macro>
+        <Key>Macro:5b0e7f43-2c1a-4b8e-9d4f-8a6c3e1f7b20</Key>
         <Arguments />
       </Command>
       <ImageResourceId>AvevaSharedIcons:ID_DEFAULTS</ImageResourceId>
-      <Caption>Nexus solo lectura</Caption>
+      <Caption>Nexus</Caption>
       <HelpContext />
-      <Tooltip>Inicia Nexus en solo lectura, o vuelve a solo lectura si ya estaba en marcha</Tooltip>
-      <TooltipFormattedText>&lt;p&gt;Inicia Nexus solo para consultar (Claude no puede modificar el modelo).&lt;/p&gt;</TooltipFormattedText>
-      <TooltipTitle>Nexus solo lectura</TooltipTitle>
-      <DisplayStyle>Default</DisplayStyle>
-    </ButtonTool>
-    <ButtonTool Name="User.nexus-stop">
-      <Command>
-        <Type>Macro</Type>
-        <Macro>!!nexusstop()</Macro>
-        <Key>Macro:49d27b04-4714-4aa1-b493-bbb682d8b7f0</Key>
-        <Arguments />
-      </Command>
-      <ImageResourceId>AvevaSharedIcons:ID_WARNING</ImageResourceId>
-      <Caption>Parar Nexus</Caption>
-      <HelpContext />
-      <Tooltip>Para Nexus en esta sesion</Tooltip>
-      <TooltipFormattedText>&lt;p&gt;Para Nexus en esta sesion de E3D.&lt;/p&gt;</TooltipFormattedText>
-      <TooltipTitle>Parar Nexus</TooltipTitle>
+      <Tooltip>Abre el panel Nexus MCP: iniciar o parar Nexus y elegir modo Lectura o Edicion</Tooltip>
+      <TooltipFormattedText>&lt;p&gt;Abre el panel &lt;b&gt;Nexus MCP&lt;/b&gt;: estado de Nexus en esta sesion, botones Iniciar / Parar y modo Lectura / Edicion (Claude solo escribe en las bases autorizadas en el MCP).&lt;/p&gt;</TooltipFormattedText>
+      <TooltipTitle>Nexus MCP</TooltipTitle>
       <DisplayStyle>Default</DisplayStyle>
     </ButtonTool>
   </Tools>
@@ -70,9 +40,7 @@
       <Groups>
         <Group Name="User.NexusMCP-Group">
           <Tools>
-            <Tool Name="User.nexus-start" />
-            <Tool Name="User.nexus-start-ro" />
-            <Tool Name="User.nexus-stop" />
+            <Tool Name="User.nexus-panel" />
           </Tools>
           <Caption>NEXUS</Caption>
         </Group>

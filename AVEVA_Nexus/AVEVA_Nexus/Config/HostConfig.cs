@@ -72,5 +72,27 @@ namespace AVEVA_Nexus.Config
         {
             ReadOnlyMode.SetWritable(writable);
         }
+
+        // Current mode, for the NexusMCP panel. PML's own "var evar" does not see SetWritable (PML keeps
+        // its copy of the environment), so the panel must ask here.
+        [PMLNetCallable()]
+        public bool IsWritable()
+        {
+            return !ReadOnlyMode.IsOn;
+        }
+
+        // Address the gateway listens on (or will listen on at the next Start), e.g. "http://localhost:5001/".
+        [PMLNetCallable()]
+        public string Prefix()
+        {
+            return SimpleHttpServer.Prefix;
+        }
+
+        // Add-in version, the same text as GET /api/Health (e.g. "1.1.0+3d20ae6").
+        [PMLNetCallable()]
+        public string Version()
+        {
+            return AVEVA_Nexus.Models.HealthInfo.VersionOf(typeof(HostConfig).Assembly);
+        }
     }
 }

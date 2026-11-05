@@ -1,0 +1,18 @@
+--|------------------------------------------------------------------------------------------------
+
+-- Abre el panel "Nexus MCP" (formulario !!nexusmcp): estado de Nexus, Iniciar / Parar y modo
+-- Lectura / Edicion. Lo llama el boton "Nexus" de la cinta y la macro de arranque del lanzador
+-- (-Panel); tambien se puede escribir en la ventana de comandos:  !!nexuspanel()
+
+define function !!nexuspanel()
+
+    show !!nexusmcp
+    handle any
+        !!nexusmsg('No se pudo abrir el panel !!nexusmcp (falta forms\nexusmcp.pmlfrm en la PMLLIB?).', TRUE)
+        return
+    endhandle
+
+    -- si ya estaba abierto, show no vuelve a pasar por el initcall: se actualiza aqui
+    !!nexusmcp.refresh()
+
+endfunction

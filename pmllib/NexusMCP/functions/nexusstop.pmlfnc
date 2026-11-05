@@ -22,6 +22,7 @@ define function !!nexusstop()
         return
     endhandle
     !!nexusRunning = FALSE
+    !!nexusWritable = FALSE
 
     !!nexusmsg('Nexus parado. Si Claude modifico el modelo, recuerda guardar y liberar los claims antes de cerrar E3D.', FALSE)
 
