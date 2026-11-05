@@ -16,7 +16,7 @@ namespace AVEVA_Nexus.Services
 
         private readonly IAvevaProvider _provider;
 
-        public ElementService() : this(new AvevaProvider()) { }
+        public ElementService() : this(Providers.Create()) { }
 
         public ElementService(IAvevaProvider provider)
         {

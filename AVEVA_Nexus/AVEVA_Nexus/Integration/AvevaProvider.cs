@@ -133,8 +133,14 @@ namespace AVEVA_Nexus.Integration
         {
             return AvevaGate.Run<object>(() =>
             {
+                // Same checks as ReadAttributes: an unknown name gives a null attribute (seen live), which
+                // GetAsString would turn into a NullReferenceException and a 500.
                 DbAttribute dbAttribute = DbAttribute.GetDbAttribute(attribute);
+                if (dbAttribute == null)
+                    throw new NexusException("Unknown attribute '" + attribute + "'", 400);
                 DbElement dbElement = DbElement.GetElement(dbref);
+                if (dbElement == null || !dbElement.IsValid)
+                    throw new NexusException("Element " + dbref + " not found", 404);
                 return dbElement.GetAsString(dbAttribute);
             });
         }
@@ -540,6 +546,15 @@ namespace AVEVA_Nexus.Integration
             {
                 return false;
             }
+        }
+    }
+
+    // Production default of the composition root (see Providers.cs): the real provider.
+    public static partial class Providers
+    {
+        static partial void CreateDefault(ref IAvevaProvider provider)
+        {
+            provider = new AvevaProvider();
         }
     }
 }

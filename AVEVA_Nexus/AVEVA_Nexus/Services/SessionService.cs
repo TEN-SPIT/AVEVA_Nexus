@@ -8,7 +8,7 @@ namespace AVEVA_Nexus.Services
     {
         private readonly IAvevaProvider _provider;
 
-        public SessionService() : this(new AvevaProvider()) { }
+        public SessionService() : this(Providers.Create()) { }
 
         public SessionService(IAvevaProvider provider)
         {

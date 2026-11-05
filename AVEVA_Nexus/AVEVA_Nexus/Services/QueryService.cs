@@ -12,7 +12,7 @@ namespace AVEVA_Nexus.Services
     {
         private readonly IAvevaProvider _provider;
 
-        public QueryService() : this(new AvevaProvider()) { }
+        public QueryService() : this(Providers.Create()) { }
 
         public QueryService(IAvevaProvider provider)
         {

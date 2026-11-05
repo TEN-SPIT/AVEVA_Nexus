@@ -28,9 +28,13 @@ namespace Nexus.Tests
             return null;
         }
 
+        // Every failure message, in order (Program.Run attaches the new ones to the current test for the JUnit report).
+        public static readonly List<string> Messages = new List<string>();
+
         public static void Fail(string name, string detail)
         {
             Failures++;
+            Messages.Add(name + ": " + detail);
             Console.WriteLine("  FAIL  " + name + ": " + detail);
         }
     }
