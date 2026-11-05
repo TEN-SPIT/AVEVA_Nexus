@@ -1,0 +1,5 @@
+-- Stop Nexus in a graphical E3D session. Run it from the E3D command window
+-- (use the copy under run\<project>-gui\ that Start-E3D-GUI-Writable.ps1 leaves: $M/<that path>).
+-- Do this before closing E3D if the MCP has been working on elements: save_work first, so no claims stay held.
+!!nexusHost.Stop()
+$P Nexus stopped
