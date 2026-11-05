@@ -2,6 +2,7 @@
 using AVEVA_Nexus.Exceptions;
 using AVEVA_Nexus.Logging;
 using AVEVA_Nexus.Models;
+using AVEVA_Nexus.Validation;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -99,7 +100,7 @@ namespace AVEVA_Nexus.Http
 
             if (segments[1].Equals("Health", StringComparison.OrdinalIgnoreCase))
             {
-                return new ApiResponse { Success = true, Data = "ok" };
+                return new ApiResponse { Success = true, Data = HealthInfo.Current() };
             }
 
             Trace.Line($"Root Segment = {segments[0]}");
@@ -151,6 +152,7 @@ namespace AVEVA_Nexus.Http
                     "Execute",
                     StringComparison.OrdinalIgnoreCase))
             {
+                RequireMethod(context, "POST");
                 return _pml.Execute(
                     context.Body);
             }
@@ -166,6 +168,8 @@ namespace AVEVA_Nexus.Http
                 segments[2].Equals("Variable",
                 StringComparison.OrdinalIgnoreCase))
             {
+                RequireMethod(context, "GET");
+
                 string variableType =
                     segments[3];
 
@@ -259,6 +263,8 @@ namespace AVEVA_Nexus.Http
                     "Attribute",
                     StringComparison.OrdinalIgnoreCase))
             {
+                RequireMethod(context, "GET");
+
                 string dbref =
                     context.Query["dbref"];
 
@@ -282,9 +288,11 @@ namespace AVEVA_Nexus.Http
                         400);
                 }
 
+                // Same checks as the other element routes: an invalid attribute name reaches
+                // DbAttribute.GetDbAttribute otherwise, and the ref goes through ElementRefs (400/404).
                 return _element.GetAttribute(
-                    dbref,
-                    attribute);
+                    PmlInputValidator.ElementRef(dbref),
+                    PmlInputValidator.Attribute(attribute));
             }
 
             throw new NexusException(

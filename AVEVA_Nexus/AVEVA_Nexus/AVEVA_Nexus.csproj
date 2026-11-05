@@ -12,6 +12,8 @@
     <TargetFrameworkVersion>v4.8</TargetFrameworkVersion>
     <FileAlignment>512</FileAlignment>
     <Deterministic>true</Deterministic>
+    <!-- Same default as scripts\build.ps1 (-E3dDir); override with /p:E3dDir=... -->
+    <E3dDir Condition=" '$(E3dDir)' == '' ">C:\Program Files (x86)\AVEVA\Everything3D3.1</E3dDir>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
     <DebugSymbols>true</DebugSymbols>
@@ -50,26 +52,26 @@
   </PropertyGroup>
   <ItemGroup>
     <Reference Include="Aveva.ApplicationFramework">
-      <HintPath>C:\AVEVA\Everything3D2.10\Aveva.ApplicationFramework.dll</HintPath>
+      <HintPath>$(E3dDir)\Aveva.ApplicationFramework.dll</HintPath>
       <Private>False</Private>
     </Reference>
     <Reference Include="Aveva.Core.Commands">
-      <HintPath>C:\AVEVA\Everything3D2.10\Aveva.Core.Commands.dll</HintPath>
+      <HintPath>$(E3dDir)\Aveva.Core.Commands.dll</HintPath>
       <Private>False</Private>
     </Reference>
     <Reference Include="Aveva.Core.Database">
-      <HintPath>C:\AVEVA\Everything3D2.10\Aveva.Core.Database.dll</HintPath>
+      <HintPath>$(E3dDir)\Aveva.Core.Database.dll</HintPath>
       <Private>False</Private>
     </Reference>
     <Reference Include="Aveva.Core.Utilities">
-      <HintPath>C:\AVEVA\Everything3D2.10\Aveva.Core.Utilities.dll</HintPath>
+      <HintPath>$(E3dDir)\Aveva.Core.Utilities.dll</HintPath>
       <Private>False</Private>
     </Reference>
     <Reference Include="Newtonsoft.Json, Version=13.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed, processorArchitecture=MSIL">
       <HintPath>..\packages\Newtonsoft.Json.13.0.1\lib\net45\Newtonsoft.Json.dll</HintPath>
     </Reference>
     <Reference Include="PMLNet">
-      <HintPath>C:\AVEVA\Everything3D2.10\PMLNet.dll</HintPath>
+      <HintPath>$(E3dDir)\PMLNet.dll</HintPath>
       <Private>False</Private>
     </Reference>
     <Reference Include="PresentationFramework" />
@@ -97,6 +99,7 @@
     <Compile Include="Http\JsonBody.cs" />
     <Compile Include="Models\BatchModels.cs" />
     <Compile Include="Models\ElementModels.cs" />
+    <Compile Include="Models\HealthInfo.cs" />
     <Compile Include="Query\TreeWalk.cs" />
     <Compile Include="Query\TypeNameMap.cs" />
     <Compile Include="Validation\ElementRefs.cs" />
@@ -109,6 +112,7 @@
     <Compile Include="Integration\AvevaProvider.cs" />
     <Compile Include="Integration\IAvevaProvider.cs" />
     <Compile Include="Logging\NexusLogger.cs" />
+    <Compile Include="Logging\Trace.cs" />
     <Compile Include="Models\ApiResponse.cs" />
     <Compile Include="Models\ChildrenResult.cs" />
     <Compile Include="Models\ExecuteRequest.cs" />
@@ -120,12 +124,14 @@
     <Compile Include="Models\TableResult.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="Query\Paging.cs" />
+    <Compile Include="Scripts\PmlGuard.cs" />
     <Compile Include="Scripts\ScriptSplitter.cs" />
     <Compile Include="Http\SimpleHttpServer.cs" />
     <Compile Include="Services\ElementService.cs" />
     <Compile Include="Services\PmlService.cs" />
     <Compile Include="Services\QueryService.cs" />
     <Compile Include="Validation\PmlInputValidator.cs" />
+    <Compile Include="Validation\RequestGuards.cs" />
   </ItemGroup>
   <ItemGroup>
     <Content Include="E3DInstallationDir\DesignAddins.xml" />

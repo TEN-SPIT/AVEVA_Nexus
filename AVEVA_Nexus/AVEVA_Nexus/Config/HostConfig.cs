@@ -40,6 +40,8 @@ namespace AVEVA_Nexus.Config
             AvevaGate.CaptureUiContext(AvevaGate.SelectUiContext(
                 Environment.GetEnvironmentVariable("NEXUS_UI_DISPATCH"),
                 System.Threading.SynchronizationContext.Current));
+            // NEXUS_GATE_BUSY_MS / NEXUS_GATE_UI_MS / NEXUS_GATE_STUCK_MS override the gate timeouts.
+            AvevaGate.Configure(Environment.GetEnvironmentVariable);
             Console.WriteLine("Nexus dispatch mode: " + AvevaGate.Mode);
             _host.Start();
         }

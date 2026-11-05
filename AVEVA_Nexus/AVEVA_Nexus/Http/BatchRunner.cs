@@ -12,10 +12,14 @@ namespace AVEVA_Nexus.Http
     // POST /api/Batch: runs up to MaxRequests sub-requests in order through the same routing function (so the same
     // read-only rules apply) and returns one {Status, Data, Error} per sub-request. A failing sub-request does not
     // fail the batch. Structural problems (too many requests, a nested Batch, no requests) fail the whole batch
-    // with 400 before anything runs. Pure logic: no Aveva.* references.
+    // with 400 before anything runs, and so does a batch over its overall budget (MaxPmlLines script lines across
+    // its PML/Run items, MaxRefs refs across its Element/Get items): each item has its own limit, but 50 items at
+    // that limit would hold E3D far longer than any single request. Pure logic: no Aveva.* references.
     public static class BatchRunner
     {
         public const int MaxRequests = 50;
+        public const int MaxPmlLines = 2000;
+        public const int MaxRefs = 5000;
 
         public static List<BatchItemResult> Run(string body, Func<RouteContext, object> route)
         {
@@ -36,6 +40,7 @@ namespace AVEVA_Nexus.Http
                     throw new NexusException("requests[" + i + "]: nested Batch is not allowed", 400);
                 }
             }
+            CheckBudget(request.Requests);
 
             var results = new List<BatchItemResult>();
             foreach (BatchSubRequest sub in request.Requests)
@@ -72,6 +77,65 @@ namespace AVEVA_Nexus.Http
                 NexusLogger.Error(ex);
                 return new BatchItemResult { Status = 500, Error = "Internal Server Error" };
             }
+        }
+
+        static void CheckBudget(List<BatchSubRequest> requests)
+        {
+            int lines = 0, refs = 0;
+            foreach (BatchSubRequest sub in requests)
+            {
+                if (sub == null || string.IsNullOrWhiteSpace(sub.Path)) continue;
+                string[] segments = SplitPath(sub.Path).Trim('/').Split('/');
+                if (segments.Length < 3) continue;
+                bool run = segments[1].Equals("PML", StringComparison.OrdinalIgnoreCase)
+                        && segments[2].Equals("Run", StringComparison.OrdinalIgnoreCase);
+                bool get = segments[1].Equals("Element", StringComparison.OrdinalIgnoreCase)
+                        && segments[2].Equals("Get", StringComparison.OrdinalIgnoreCase);
+                if (!run && !get) continue;
+
+                JObject body = BodyObject(sub.Body);   // a malformed body is left to the item itself (400 there)
+                if (body == null) continue;
+                if (run)
+                {
+                    JToken script = body.GetValue("script", StringComparison.OrdinalIgnoreCase);
+                    if (script != null && script.Type == JTokenType.String) lines += CountLines(script.Value<string>());
+                }
+                else
+                {
+                    JArray list = body.GetValue("refs", StringComparison.OrdinalIgnoreCase) as JArray;
+                    if (list != null) refs += list.Count;
+                }
+            }
+            if (lines > MaxPmlLines)
+            {
+                throw new NexusException(
+                    "batch too large: " + lines + " PML lines across its PML/Run requests (max " + MaxPmlLines + ")", 400);
+            }
+            if (refs > MaxRefs)
+            {
+                throw new NexusException(
+                    "batch too large: " + refs + " refs across its Element/Get requests (max " + MaxRefs + ")", 400);
+            }
+        }
+
+        static JObject BodyObject(JToken body)
+        {
+            if (body == null) return null;
+            if (body.Type != JTokenType.String) return body as JObject;
+            try { return JToken.Parse(body.Value<string>()) as JObject; }
+            catch (JsonException) { return null; }
+        }
+
+        // Counted like ScriptSplitter: blank and comment-only lines do not count.
+        static int CountLines(string script)
+        {
+            int count = 0;
+            foreach (string raw in script.Split('\n'))
+            {
+                string line = raw.Trim();
+                if (line.Length > 0 && !line.StartsWith("--")) count++;
+            }
+            return count;
         }
 
         static bool IsBatchPath(string path)

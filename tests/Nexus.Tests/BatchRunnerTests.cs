@@ -103,6 +103,56 @@ namespace Nexus.Tests
                 Check.Equal(200, results[0].Status, "status");
                 Check.Equal("bad", results[0].Error, "error");
             });
+
+            Program.Run("Batch_total_PML_lines_over_the_budget_fails_the_whole_batch_before_running", () =>
+            {
+                var lines = new List<string>();
+                for (int i = 0; i < 450; i++) lines.Add("!!a = " + i);
+                string body = Newtonsoft.Json.JsonConvert.SerializeObject(new { script = string.Join("\n", lines) });
+                string item = "{\"method\":\"POST\",\"path\":\"/api/PML/Run\",\"body\":" + body + "}";
+                bool ran = false;
+                var ex = Check.Throws<NexusException>(
+                    () => BatchRunner.Run(Requests(5, item), ctx => { ran = true; return null; }), "over budget");
+                if (ex != null)
+                {
+                    Check.Equal(400, ex.StatusCode, "status");
+                    Check.True(ex.Message.Contains(BatchRunner.MaxPmlLines.ToString()), "message names the limit: " + ex.Message);
+                }
+                Check.True(!ran, "nothing ran");
+                // 4 x 450 = 1800 lines is fine
+                Check.Equal(4, BatchRunner.Run(Requests(4, item), ctx => null).Count, "under budget");
+            });
+
+            Program.Run("Batch_PML_budget_also_counts_string_bodies_and_ignores_blank_lines", () =>
+            {
+                var lines = new List<string>();
+                for (int i = 0; i < 1001; i++) lines.Add("!!a = " + i + "\n\n-- c");
+                string inner = Newtonsoft.Json.JsonConvert.SerializeObject(new { Script = string.Join("\n", lines) });
+                string item = "{\"method\":\"POST\",\"path\":\"/api/pml/run\",\"body\":" + Newtonsoft.Json.JsonConvert.ToString(inner) + "}";
+                Check.Equal(400, Status(() => BatchRunner.Run(Requests(2, item), ctx => null), "2002 lines"), "status");
+                Check.Equal(1, BatchRunner.Run(Requests(1, item), ctx => null).Count, "1001 lines ok");
+            });
+
+            Program.Run("Batch_total_refs_over_the_budget_fails_the_whole_batch", () =>
+            {
+                var refs = new List<string>();
+                for (int i = 0; i < 1000; i++) refs.Add("=1/" + i);
+                string body = Newtonsoft.Json.JsonConvert.SerializeObject(new { refs = refs, attributes = new[] { "NAME" } });
+                string item = "{\"method\":\"POST\",\"path\":\"/api/Element/Get\",\"body\":" + body + "}";
+                var ex = Check.Throws<NexusException>(() => BatchRunner.Run(Requests(6, item), ctx => null), "6000 refs");
+                if (ex != null)
+                {
+                    Check.Equal(400, ex.StatusCode, "status");
+                    Check.True(ex.Message.Contains(BatchRunner.MaxRefs.ToString()), "message names the limit: " + ex.Message);
+                }
+                Check.Equal(5, BatchRunner.Run(Requests(5, item), ctx => null).Count, "5000 refs ok");
+            });
+
+            Program.Run("Batch_budget_ignores_malformed_bodies_so_the_item_reports_its_own_error", () =>
+            {
+                string item = "{\"method\":\"POST\",\"path\":\"/api/PML/Run\",\"body\":\"{not json\"}";
+                Check.Equal(1, BatchRunner.Run(Requests(1, item), ctx => null).Count, "runs");
+            });
         }
     }
 }

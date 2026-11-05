@@ -7,11 +7,14 @@ namespace AVEVA_Nexus.Scripts
 {
     // Splits a PML script into units for PML/Run. Plain lines run one by one (so each failure is reported on its own);
     // an if/do/handle block must run as a whole, so all its lines form one unit.
+    // A handle block protects only the statement right before it (verified on E3D 3.1), so a handle block that
+    // follows a unit is joined to that unit: run on its own it would protect nothing.
     // Pure logic: must not reference Aveva.* (it is compiled by the unit-test runner).
     public static class ScriptSplitter
     {
         static readonly Regex Opener = new Regex(@"^(if|do|handle)\b", RegexOptions.IgnoreCase);
         static readonly Regex Closer = new Regex(@"^(endif|enddo|endhandle)\b", RegexOptions.IgnoreCase);
+        static readonly Regex HandleOpener = new Regex(@"^handle\b", RegexOptions.IgnoreCase);
 
         public static List<ScriptUnit> Split(string script)
         {
@@ -54,7 +57,17 @@ namespace AVEVA_Nexus.Scripts
                     if (depth == 0)
                     {
                         block.LastLine = number;
-                        units.Add(block);
+                        ScriptUnit previous = units.Count > 0 ? units[units.Count - 1] : null;
+                        if (previous != null && HandleOpener.IsMatch(block.Lines[0]))
+                        {
+                            previous.Lines.AddRange(block.Lines);
+                            previous.LastLine = number;
+                            previous.IsBlock = true;
+                        }
+                        else
+                        {
+                            units.Add(block);
+                        }
                         block = null;
                     }
                 }

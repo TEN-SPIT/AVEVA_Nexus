@@ -60,8 +60,9 @@ def test_query_injection_is_400(api):
         assert status == 400, where
     status, _ = query(api, type="SITE; SAVEWORK")
     assert status == 400
+    # Names are resolved in C# (FindElement) and never reach PML, so an odd name is just "not found".
     status, _ = query(api, type="SITE", scope="/A;B")
-    assert status == 400
+    assert status in (400, 404)
 
 
 def test_query_offset_beyond_total(api):

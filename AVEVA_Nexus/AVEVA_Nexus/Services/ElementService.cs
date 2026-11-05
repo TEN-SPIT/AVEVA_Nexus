@@ -35,7 +35,7 @@ namespace AVEVA_Nexus.Services
         {
             return _provider.GetAttribute(
                 RequireRef(dbref),
-                attribute);
+                PmlInputValidator.Attribute(attribute));
         }
 
         // Batch read: one row per ref (dbref or name), in input order. Any ref that does not exist fails the whole
