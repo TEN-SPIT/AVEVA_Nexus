@@ -43,7 +43,7 @@ define function !!nexusstart(!writable is BOOLEAN)
             if !dll.length() EQ 0 then
                 !root = !!nexusroot()
                 if !root.length() EQ 0 then
-                    !!nexusmsg('NexusMCP no esta en la PMLLIB: no encuentro nexusstart.pmlfnc. Copia la carpeta a la PMLLIB y haz PML REHASH ALL.', TRUE)
+                    !!nexusmsg('NexusMCP no esta en la PMLLIB: no encuentro nexusstart.pmlfnc. Copia la carpeta a la PMLLIB y reinicia E3D.', TRUE)
                     return
                 endif
                 !dll = !root & '\dll\AVEVA_Nexux_Addin'

@@ -83,7 +83,8 @@ output of `$P` and the real error text with its code and position, e.g.
 
 `save_pml` writes a function/object into one fixed sandbox folder (`NEXUS_PML_SANDBOX`, default
 `C:\Temp\PMLRepos\_mcp_sandbox`, which must be under a folder in the session's PMLLIB). E3D finds it
-by name and reloads it automatically when saved again; a **new** file needs `PML REHASH ALL` once.
+by name and reloads it automatically when saved again; a **new** file needs `PML REHASH` once (only the first PMLLIB folder; `PML REHASH ALL` is refused
+because it rewrites the `pml.index` of every PMLLIB folder, shared server folders included).
 Forms cannot be loaded in a headless session (`GRAPHICS OFF`), so keep logic in functions or objects.
 
 ## Environment variables

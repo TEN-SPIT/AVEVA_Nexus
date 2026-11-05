@@ -63,7 +63,8 @@ Mira `!!nexusport()`. Nexus solo escucha en `localhost`. No lo arranques en el m
    `.uic` y las DLL en `<runtime>\package\NexusMCP-<versión>`.
 2. Copia esa carpeta, con el nombre `NexusMCP`, a una carpeta de la PMLLIB del proyecto, por ejemplo
    `2_Design\`. No hay rutas fijas: `!!nexusroot()` encuentra la carpeta a partir de `nexusstart.pmlfnc`.
-3. En E3D, ejecuta `PML REHASH ALL` o reinicia. Desde ese momento funciona `!!nexuspanel()`.
+3. Reinicia E3D (o, si eres quien administra esa PMLLIB, `PML REHASH ALL`: reescribe los `pml.index`
+   de todas las carpetas de la PMLLIB, también las compartidas). Desde ese momento funciona `!!nexuspanel()`.
 4. Para tener el **botón**, el `.uic` tiene que figurar en un `DesignCustomization.xml` que esté en la
    `CAF_UIC_PATH` del proyecto. Hay que añadir una línea dentro de `<UICustomizationFiles>`:
 
@@ -115,6 +116,6 @@ Notas de PML aprendidas:
 - `var !x evar 'NOMBRE_CON_GUION'` necesita las comillas;
 - `.unset()` falla con objetos de la DLL;
 - se usa el patrón "valor por defecto, intento, `handle any` solo para recuperarse" en vez de `elsehandle none`;
-- E3D puede seguir usando una versión anterior de una función ya cargada (`PML REHASH ALL`,
-  `PML RELOAD FORM !!nexusmcp`);
+- E3D puede seguir usando una versión anterior de una función ya cargada (`PML RELOAD FORM !!nexusmcp`
+  o reiniciar; no usar `PML REHASH ALL` desde Claude: reescribe índices compartidos);
 - un `para` no pinta el color de fondo: la línea de estado es un `text` no editable.
