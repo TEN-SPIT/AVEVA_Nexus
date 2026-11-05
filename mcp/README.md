@@ -28,17 +28,27 @@ Restart Claude Code to see the tools (`mcp__nexus__*`).
 | Tool | What it does |
 |---|---|
 | `session_info` | Project, MDB, user, module, E3D version, read-only flag |
-| `query_elements` | Find elements by type, scope, PML condition; read attributes; paging |
+| `query_elements` | Find elements by type, scope, PML condition or `name_like` wildcard; read attributes; paging; `compact=true` returns columns + row lists (fewer tokens) |
+| `count_elements` | Just the total for a type/scope/condition |
 | `get_attributes` | Read attributes of many known elements in one call |
 | `list_children` | Walk the hierarchy: owner and children, optional type filter |
 | `attribute_list` | Valid attributes of an element type |
+| `batch` | Up to 50 read calls in one round-trip (read routes only; falls back to sequential calls on an older Nexus) |
+| `resolve_names` | Names -> dbref and type (on an older Nexus it uses PML, so it needs a writable session) |
+| `element_tree` | A whole subtree in one call (depth, type filter, limit); falls back to repeated Children |
+| `describe_element` | Name, type, owner, common attributes valid for the type and a children count by type |
+| `pml_eval` | Evaluate PML expressions and get their values (writable session only; through the write guard) |
+| `call_pml_function` | Call a sandbox/PMLLIB function with safely quoted arguments (writable session only; through the write guard) |
 | `run_pml` | Run PML and read variables back, **with the real E3D messages** in `Log` |
 | `save_pml` / `delete_pml` / `list_pml` | Keep test functions/objects in a sandbox folder E3D loads from |
 | `save_work` | The only way to commit: `SAVEWORK` of ONE allowed database, then `UNCLAIM ALL` |
 | `e3d_projects` | Projects this machine can start (never shows credentials) |
 | `start_e3d` / `stop_e3d` | Start (with a login dialog) or stop the local headless session; stopping is refused while elements are still claimed |
 
-Element types are full names (`EQUIPMENT`, not `EQUI`).
+Element types are full names; `EQUI` is accepted by `query_elements` and mapped to `EQUIPMENT`.
+
+The server keeps one keep-alive HTTP connection to Nexus (5 s connect timeout, 60 s read, 180 s for PML). Tools that
+need the newer Nexus routes (`Batch`, `Element/Resolve`, `Element/Tree`) detect a 404 and fall back to older routes.
 
 ### Testing PML without a person in the loop
 `run_pml` wraps every script with E3D's `ALPHA LOG /<file>` and returns the file as `Log`. It holds the

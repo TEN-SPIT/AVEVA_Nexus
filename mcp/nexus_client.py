@@ -5,6 +5,7 @@ This module sends the request, opens the envelope and returns only `Data`.
 Any failure becomes a NexusError with a short message the model can act on.
 """
 
+import logging
 import os
 from typing import Any
 
@@ -30,20 +31,37 @@ class NexusError(ToolError):
 
     Subclassing ToolError matters: the MCP SDK shows the model the message of a
     ToolError, but hides the message of any other exception ("Error executing tool").
+
+    `status` is the HTTP status (None if there was none) and `route_missing` is True when Nexus
+    answered 404 because the route itself does not exist (an older Nexus DLL), as opposed to a
+    missing element or variable.
     """
+
+    def __init__(self, message: str, status: int | None = None, route_missing: bool = False):
+        super().__init__(message)
+        self.status = status
+        self.route_missing = route_missing
+
+
+# One keep-alive connection pool for the whole server process: short connect timeout (Nexus is
+# local, so an unreachable one should fail fast), long read timeout (PML and big queries can be slow).
+_TIMEOUT = httpx.Timeout(60.0, connect=5.0)
+_PML_TIMEOUT = httpx.Timeout(180.0, connect=5.0)
+_client = httpx.Client(timeout=_TIMEOUT)
+logging.getLogger("httpx").setLevel(logging.WARNING)  # one INFO line per request is just noise on stderr
 
 
 def call(method: str, path: str, *, params: dict | None = None, body: dict | None = None) -> Any:
     """Call a Nexus route and return the envelope's `Data`."""
     headers = {"X-Nexus-Token": NEXUS_TOKEN} if NEXUS_TOKEN else {}
     try:
-        response = httpx.request(
+        response = _client.request(
             method,
             f"{NEXUS_URL}{path}",
             params=params,
             json=body,
             headers=headers,
-            timeout=60,
+            timeout=_PML_TIMEOUT if path.startswith("/api/PML") else _TIMEOUT,
         )
     except httpx.ConnectError:
         raise NexusError(
@@ -60,10 +78,12 @@ def call(method: str, path: str, *, params: dict | None = None, body: dict | Non
     if response.is_success and isinstance(envelope, dict) and envelope.get("Success", True):
         return envelope.get("Data")
 
+    status = response.status_code
     detail = None
     if isinstance(envelope, dict):
         detail = envelope.get("Message") or envelope.get("Error")
+    route_missing = status == 404 and (not detail or str(detail).startswith(("Route Not Found", "Unsupported")))
     if detail:
         # Nexus already explains itself ("Unknown element type 'X'"); repeating the generic hint only adds noise.
-        raise NexusError(f"Nexus {response.status_code}: {detail}")
-    raise NexusError(_STATUS_HINTS.get(response.status_code, f"Unexpected HTTP status {response.status_code}."))
+        raise NexusError(f"Nexus {status}: {detail}", status, route_missing)
+    raise NexusError(_STATUS_HINTS.get(status, f"Unexpected HTTP status {status}."), status, route_missing)

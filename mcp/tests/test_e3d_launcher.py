@@ -7,6 +7,8 @@ from mcp.server.mcpserver.exceptions import ToolError
 
 import e3d_launcher as launcher
 
+STORE = {}  # fake Windows Credential Manager, reset by the local_dir fixture
+
 
 @pytest.fixture
 def local_dir(tmp_path, monkeypatch):
@@ -25,12 +27,18 @@ def local_dir(tmp_path, monkeypatch):
     )
     monkeypatch.setattr(launcher, "LOCAL_DIR", tmp_path)
     monkeypatch.setattr(launcher, "WRITABLE_PROJECTS", set())
+    store = STORE
+    store.clear()
+    monkeypatch.setattr(launcher.credstore, "read", lambda project, user: store.get((project, user)))
+    monkeypatch.setattr(launcher.credstore, "write", lambda project, user, pw: store.__setitem__((project, user), pw))
+    monkeypatch.setattr(launcher.credstore, "delete", lambda project, user: store.pop((project, user), None) is not None)
     return tmp_path
 
 
 def test_list_projects_never_exposes_credentials(local_dir):
     listing = launcher.list_projects()
-    assert listing == {"DEMO": {"project": "DEMO", "mdb": "/001", "module": "DESIGN", "port": 5001, "auth": "password"}}
+    assert listing == {"DEMO": {"project": "DEMO", "mdb": "/001", "module": "DESIGN", "port": 5001, "auth": "password",
+                               "login": "dialog"}}
     assert "never-show-this" not in json.dumps(listing)
 
 
@@ -59,7 +67,7 @@ def test_start_passes_login_by_environment_not_by_arguments(local_dir, monkeypat
     seen = {}
     health = iter([False, True])
     monkeypatch.setattr(launcher, "_health", lambda port: next(health))
-    monkeypatch.setattr(launcher, "_ask_credentials", lambda project, user: ("SYSTEM", "s3cret"))
+    monkeypatch.setattr(launcher, "_ask_credentials", lambda project, user: ("SYSTEM", "s3cret", False))
 
     class Done:
         returncode, stdout, stderr = 0, "", ""
@@ -105,7 +113,9 @@ def dialog(monkeypatch, stdout, returncode=0):
 
 def test_dialog_returns_user_and_password(monkeypatch):
     dialog(monkeypatch, "SYSTEM\r\nabc123\r\n")
-    assert launcher._ask_credentials("DEMO", "SYSTEM") == ("SYSTEM", "abc123")
+    assert launcher._ask_credentials("DEMO", "SYSTEM") == ("SYSTEM", "abc123", False)
+    dialog(monkeypatch, "SYSTEM\r\nabc123\r\nremember\r\n")
+    assert launcher._ask_credentials("DEMO", "SYSTEM") == ("SYSTEM", "abc123", True)
 
 
 def test_dialog_strips_a_windows_domain_prefix(monkeypatch):
@@ -125,3 +135,51 @@ def test_dialog_refuses_characters_that_break_a_command_line(monkeypatch, passwo
     dialog(monkeypatch, f"SYSTEM\r\n{password}\r\n")
     with pytest.raises(ToolError, match="cannot be passed safely"):
         launcher._ask_credentials("DEMO", "SYSTEM")
+
+
+class Done:
+    returncode, stdout, stderr = 0, "", ""
+
+
+def _fake_launch(monkeypatch, seen, health):
+    monkeypatch.setattr(launcher, "_health", lambda port: next(health))
+    monkeypatch.setattr(launcher, "_run_script", lambda s, *a, extra_env=None: seen.update(env=extra_env) or Done())
+    monkeypatch.setattr(launcher.time, "sleep", lambda s: None)
+
+
+def test_stored_login_starts_without_any_dialog(local_dir, monkeypatch):
+    STORE[("DEMO", "SYSTEM")] = "fromvault"
+    seen = {}
+    _fake_launch(monkeypatch, seen, iter([False, True]))
+    monkeypatch.setattr(launcher, "_ask_credentials", lambda *a: pytest.fail("stored login needs no dialog"))
+    assert launcher.list_projects()["DEMO"]["login"] == "stored"
+    result = launcher.start("DEMO")
+    assert result["status"] == "started" and result["login"] == "stored"
+    assert seen["env"] == {"NEXUS_E3D_USER": "SYSTEM", "NEXUS_E3D_PASSWORD": "fromvault"}
+    assert "fromvault" not in json.dumps(result)
+
+
+def test_remember_stores_the_password_only_after_e3d_answers(local_dir, monkeypatch):
+    seen = {}
+    _fake_launch(monkeypatch, seen, iter([False, True]))
+    monkeypatch.setattr(launcher, "_ask_credentials", lambda *a: ("SYSTEM", "typed", True))
+    launcher.start("DEMO")
+    assert STORE == {("DEMO", "SYSTEM"): "typed"}
+
+
+def test_remember_is_not_stored_when_e3d_refuses_the_login(local_dir, monkeypatch):
+    seen = {}
+    _fake_launch(monkeypatch, seen, iter([False] * 10))
+    monkeypatch.setattr(launcher, "_ask_credentials", lambda *a: ("SYSTEM", "wrong", True))
+    run = local_dir / "run" / "DEMO"
+    run.mkdir(parents=True)
+    (run / "stdout.log").write_text("AVEVA monitor\n(41,12) Invalid password for user SYSTEM\n")
+    with pytest.raises(ToolError, match="Invalid password"):
+        launcher.start("DEMO")
+    assert STORE == {}
+
+
+def test_forget_login(local_dir):
+    STORE[("DEMO", "SYSTEM")] = "x"
+    assert launcher.forget_login("DEMO") == {"status": "forgotten", "login": "dialog"}
+    assert launcher.forget_login("DEMO")["status"] == "nothing_stored"

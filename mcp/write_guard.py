@@ -155,3 +155,14 @@ def save_work(db: str) -> dict:
             f"{released['Log'] or released['Errors']}"
         )
     return outcome
+
+
+def run_query_pml(script: str, variables: list[str] | None = None) -> dict:
+    """Run read-only helper PML (`Q ...` lookups, scratch variables) that the MCP itself builds.
+
+    Skips the database checks of guarded_run (a lookup of an element in a locked database is fine)
+    but still refuses SAVEWORK, so no tool can use it to commit.
+    """
+    if has_save_command(script):
+        raise ToolError("SAVEWORK is not allowed here. Use the save_work tool.")
+    return pml_dev.run_with_log(script, variables)

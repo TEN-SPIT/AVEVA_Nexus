@@ -9,6 +9,7 @@ from mcp.server.mcpserver.exceptions import ToolError
 
 import e3d_launcher
 import nexus_client
+import ops
 import pml_dev
 import write_guard
 
@@ -38,6 +39,8 @@ def query_elements(
     attributes: list[str] | None = None,
     limit: int | None = None,
     offset: int | None = None,
+    name_like: str | None = None,
+    compact: bool = False,
 ) -> dict:
     """Find E3D elements of one type and read some of their attributes in a single call.
 
@@ -45,25 +48,128 @@ def query_elements(
     Returns a table: each row has the element `dbref` plus the requested attributes;
     `Total` is the count before paging.
 
-    - type: E3D element type by its full name, e.g. SITE, ZONE, PIPE, EQUIPMENT. Use
-      EQUIPMENT, not EQUI: list_children reports the short form "EQUI" but this query
-      rejects it ("Unknown element type"). Other unknown types are rejected too; use
-      attribute_list to check a type's valid attributes.
+    - type: E3D element type, e.g. SITE, ZONE, PIPE, EQUIPMENT. EQUI is accepted as EQUIPMENT.
+      Unknown types are rejected; use attribute_list to check a type's valid attributes.
     - scope: where to search, as a dbref like "=123/456". Element names containing quotes
       cannot be used; resolve them to a dbref first. Omit to search the whole database.
     - where: a PML condition, e.g. "BORE gt 300". Plain read-only expressions only
       (no semicolons, no method calls, no commands such as DELETE).
     - attributes: attribute names to return, e.g. ["NAME", "BORE"]. A cell is null if the
       element has no such attribute; "unset" means it exists but has no value.
+    - name_like: wildcard on the element name (* and ?), case-sensitive, e.g. "*PUMP*" or
+      "PIPE-1*" (a leading "/" is added when the pattern does not start with * or /). Combined
+      with `where` by AND.
     - limit: rows to return (default 100, max 1000). Use offset to page through more.
+    - compact: True returns {total, offset, columns, rows: [[...]]} instead of one object per
+      row; much fewer tokens for big results.
     """
-    return nexus_client.call(
+    data = nexus_client.call(
         "POST",
         "/api/Element/Query",
-        body=_without_none(
-            type=type, scope=scope, where=where, attributes=attributes, limit=limit, offset=offset
-        ),
+        body=ops.build_query(type, scope, where, name_like, attributes=attributes, limit=limit, offset=offset),
     )
+    return ops.compact_table(data) if compact else data
+
+
+@mcp.tool()
+def count_elements(type: str, scope: str | None = None, where: str | None = None, name_like: str | None = None) -> dict:
+    """Count elements of a type without listing them: returns {"total": n}.
+
+    Cheaper than query_elements when you only need "how many". Arguments as in query_elements
+    (type, scope dbref, PML where condition, name_like wildcard).
+    """
+    data = nexus_client.call(
+        "POST", "/api/Element/Query", body=ops.build_query(type, scope, where, name_like, limit=1)
+    )
+    return {"total": data.get("Total")}
+
+
+@mcp.tool()
+def batch(requests: list[dict]) -> list[dict]:
+    """Run several READ calls in one round-trip (up to 50). Use it instead of many separate tool calls.
+
+    Each request: {"method": "GET"|"POST", "path": "/api/Element/Children", "query": {...},
+    "body": {...}}. Allowed paths: /api/Health, /api/Session/Info, /api/Element/Query, Get,
+    Children, AttributeList, Resolve, Tree (anything else, e.g. PML, is refused). `query` holds
+    URL parameters (GET), `body` the JSON (POST), with the same fields the matching tool takes
+    (e.g. Children: {"dbref": "=1/2"}; Get: {"refs": [...], "attributes": [...]}).
+
+    Returns one entry per request, in order: {"Status", "Data", "Error"}. One failing request does
+    not fail the others, so check each Status/Error.
+    """
+    return ops.batch(requests)
+
+
+@mcp.tool()
+def resolve_names(names: list[str]) -> list[dict | None]:
+    """Turn element names into dbrefs and types: [{"Name", "Dbref", "Type"}], null for a name that
+    does not exist.
+
+    Use this when the user gives names ("/PUMP-101") and a tool needs a dbref. A missing leading
+    "/" is added. Names must be plain (letters, digits, _ . -). On an older Nexus this runs PML,
+    which needs a writable session; a read-only one then fails with a clear message.
+    """
+    return ops.resolve_names(names)
+
+
+@mcp.tool()
+def element_tree(ref: str, depth: int = 2, type: str | None = None, limit: int = 500) -> dict:
+    """Return a whole subtree in one call instead of repeated list_children.
+
+    Result: {"Root", "Items": [{"Dbref", "Type", "Name", "Depth", "Owner"}], "Truncated"}.
+    Truncated=true means the limit (or, on older Nexus, a cap of 200 child lookups) cut it short:
+    narrow with `type` or a smaller depth.
+
+    - ref: dbref ("=1/2") or name ("/SITE-A").
+    - depth: levels below ref, 1..10 (default 2).
+    - type: only return elements of this type (the walk still passes through the others).
+    - limit: max items (default 500, max 5000).
+    """
+    return ops.element_tree(ref, depth, type, limit)
+
+
+@mcp.tool()
+def describe_element(ref: str) -> dict:
+    """One-stop "what is this element": name, type, owner, the common attributes that exist for
+    its type (DESC, FUNC, PURP, POS, ORI, BORE, PSPEC, ...; unset ones omitted) and a children
+    summary (count per type, first 500 children).
+
+    Use it as the first look at any element; follow up with get_attributes or element_tree.
+
+    - ref: dbref ("=1/2") or name ("/PUMP-101"). Fails with "Element not found" if it does not exist.
+    """
+    return ops.describe_element(ref)
+
+
+@mcp.tool()
+def pml_eval(expressions: list[str]) -> dict:
+    """Evaluate PML expressions and return their values, e.g. ["1 + 2", "NAME OF /SITE-A",
+    "UPCASE(|abc|)"]. Result: {"values": [...], "ok"} (+ "errors", "log" when something failed).
+
+    Needs a WRITABLE session: it runs PML through Nexus, which is blocked in read-only mode
+    (the call then fails saying so). Goes through the same write guard as run_pml. Each expression
+    is one line (no ';', max 20 per call); values are assigned to temporary !!mcpEvalN variables
+    that are deleted afterwards. For several statements or commands use run_pml.
+    """
+    return ops.pml_eval(expressions)
+
+
+@mcp.tool()
+def call_pml_function(name: str, args: list[str | int | float | bool] | None = None, returns: bool = True) -> dict:
+    """Call a PML function (a saved sandbox one such as mcpecho, or one from PMLLIB) and return
+    {"ok", "value", "errors", "log"}.
+
+    Needs a WRITABLE session (PML is blocked in read-only mode) and goes through the write guard.
+    Arguments are quoted for you: strings become |...| (they cannot contain '|', '$' or line
+    breaks), numbers and booleans are passed as such. Arrays/objects are not supported: use
+    run_pml for those.
+
+    - name: identifier only, with or without "!!" (e.g. "mcpecho"). The function must be loaded
+      (for a new sandbox file run "PML REHASH ALL" first).
+    - args: positional arguments.
+    - returns: False for functions that return nothing (otherwise assigning the result fails).
+    """
+    return ops.call_pml_function(name, args, returns)
 
 
 @mcp.tool()
@@ -196,9 +302,21 @@ def list_pml() -> dict:
 def e3d_projects() -> dict:
     """List the E3D projects this machine can start, with project code, MDB, module and port.
 
-    Use this to learn the valid names for start_e3d / stop_e3d. Credentials are never shown.
+    Use this to learn the valid names for start_e3d / stop_e3d. Credentials are never shown;
+    `login` says how start_e3d will log in: "stored" (no dialog), "dialog" or "windows".
     """
     return e3d_launcher.list_projects()
+
+
+@mcp.tool()
+def forget_e3d_login(project: str) -> dict:
+    """Delete the E3D password stored for a project in the Windows Credential Manager, so the
+    next start_e3d shows the login dialog again. Use it when start_e3d reports the stored
+    password was refused, or when the user asks.
+
+    - project: a name from e3d_projects.
+    """
+    return e3d_launcher.forget_login(project)
 
 
 @mcp.tool()
@@ -209,10 +327,11 @@ def start_e3d(project: str, writable: bool = False) -> dict:
     Use this when session_info reports that Nexus cannot be reached. If Nexus is already
     running it does nothing and says so.
 
-    LOGIN: a Windows credential dialog opens on the user's screen and the call waits (up to
-    3 minutes) for them to type the E3D user and password. Tell the user to look for it
-    before calling. NEVER ask for the password in the chat and never put credentials in any
-    argument: they go from the dialog straight to E3D and you never see them.
+    LOGIN: if the password is stored in the Windows Credential Manager (e3d_projects shows
+    login "stored"), E3D starts with no interaction. Otherwise a login dialog opens on the
+    user's screen and the call waits (up to 3 minutes); tell the user to look for it first.
+    NEVER ask for the password in the chat and never put credentials in any argument: they
+    go from the store or the dialog straight to E3D and you never see them.
 
     - project: a name from e3d_projects (e.g. "DEMO").
     - writable: default False (read-only: queries only, run_pml is blocked). True allows

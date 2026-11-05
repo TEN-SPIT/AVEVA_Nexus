@@ -25,7 +25,7 @@ def respond(monkeypatch):
                 raise raises
             return fake_response(status, payload)
 
-        monkeypatch.setattr(nexus_client.httpx, "request", fake_request)
+        monkeypatch.setattr(nexus_client._client, "request", fake_request)
         return calls
 
     return install
@@ -90,3 +90,26 @@ def test_nexus_error_is_a_tool_error():
     from mcp.server.mcpserver.exceptions import ToolError
 
     assert issubclass(NexusError, ToolError)
+
+
+def test_one_persistent_client_is_reused():
+    assert isinstance(nexus_client._client, httpx.Client)
+    assert nexus_client._client.timeout.connect == 5.0
+
+
+def test_pml_gets_a_longer_read_timeout(respond):
+    calls = respond(200, {"Success": True, "Data": 1})
+    nexus_client.call("POST", "/api/PML/Run", body={})
+    nexus_client.call("GET", "/x")
+    assert calls[0][2]["timeout"].read > calls[1][2]["timeout"].read
+
+
+def test_missing_route_is_told_apart_from_missing_element(respond):
+    respond(404, {"Success": False, "Error": "Route Not Found. Module 'Batch' not supported."})
+    with pytest.raises(NexusError) as error:
+        nexus_client.call("POST", "/api/Batch", body={})
+    assert error.value.route_missing and error.value.status == 404
+    respond(404, {"Success": False, "Error": "Element not found"})
+    with pytest.raises(NexusError) as error:
+        nexus_client.call("GET", "/x")
+    assert not error.value.route_missing and error.value.status == 404
