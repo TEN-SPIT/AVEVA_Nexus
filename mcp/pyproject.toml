@@ -1,16 +1,40 @@
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
 [project]
 name = "nexus-mcp"
 version = "0.1.0"
+description = "MCP server that exposes AVEVA E3D through the Nexus HTTP add-in"
+readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
     "httpx>=0.28.1",
-    "mcp[cli]>=2.3.0",
+    "mcp[cli]>=2.3,<3",
 ]
+
+[project.scripts]
+nexus-mcp = "server:main"
 
 [dependency-groups]
 dev = [
     "pytest>=9.2.0",
 ]
+
+[tool.hatch.build.targets.wheel]
+include = [
+    "audit.py",
+    "credstore.py",
+    "e3d_launcher.py",
+    "nexus_client.py",
+    "ops.py",
+    "pml_dev.py",
+    "server.py",
+    "write_guard.py",
+]
+
+[tool.hatch.build.targets.sdist]
+include = ["*.py", "README.md", "pyproject.toml", "tests/**"]
 
 [tool.pytest.ini_options]
 pythonpath = ["."]

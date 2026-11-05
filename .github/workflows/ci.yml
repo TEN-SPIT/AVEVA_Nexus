@@ -1,0 +1,65 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  mcp:
+    name: MCP server tests
+    runs-on: windows-latest   # credstore.py uses Windows ctypes
+    defaults:
+      run:
+        working-directory: mcp
+    steps:
+      - uses: actions/checkout@v4.2.2
+      - uses: astral-sh/setup-uv@v6.8.0
+        with:
+          version: "0.13.7"
+      - name: Sync locked dependencies
+        shell: pwsh
+        run: |
+          if (Test-Path uv.lock) { uv sync --frozen } else { uv sync }
+      - name: Tests
+        run: uv run pytest -q
+      - name: Package builds
+        run: uv build
+
+  csharp-unit:
+    name: C# unit tests (AVEVA-free subset)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4.2.2
+      - name: Restore Newtonsoft.Json 13.0.1
+        shell: pwsh
+        run: |
+          $dir = Join-Path $env:RUNNER_TEMP 'newtonsoft'
+          New-Item -ItemType Directory -Force $dir | Out-Null
+          $pkg = Join-Path $dir 'nj.zip'
+          Invoke-WebRequest -UseBasicParsing -OutFile $pkg `
+            -Uri 'https://api.nuget.org/v3-flatcontainer/newtonsoft.json/13.0.1/newtonsoft.json.13.0.1.nupkg'
+          Expand-Archive -Path $pkg -DestinationPath $dir -Force
+          $dll = Join-Path $dir 'lib\net45\Newtonsoft.Json.dll'
+          if (-not (Test-Path $dll)) { throw "Newtonsoft.Json.dll not found at $dll" }
+          "NEXUS_NEWTONSOFT=$dll" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
+      - name: Run tests
+        shell: powershell
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File scripts\run-tests.ps1
+
+  scan:
+    name: Sensitive-data scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4.2.2
+      - name: Scan tracked files
+        env:
+          # Optional repository secret: newline-separated regexes of project-specific forbidden words.
+          SENSITIVE_PATTERNS: ${{ secrets.SENSITIVE_PATTERNS }}
+        run: python3 -I .github/scripts/scan_sensitive.py

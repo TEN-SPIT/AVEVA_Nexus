@@ -17,12 +17,33 @@ talks to it over HTTP, and can start and stop a local headless (TTY) E3D session
 - For `start_e3d`/`stop_e3d`: a local working folder with `Start-Nexus.ps1`, `Stop-Nexus.ps1` and
   `config\projects.json` (see below).
 
-## Register it in Claude Code
+## Install (other users)
+Prerequisites: Windows, [`uv`](https://docs.astral.sh/uv/), and a Nexus add-in built and deployed in your
+E3D (see the root README). Nothing else needs installing: `uvx` fetches the server and its dependencies.
+
+```
+# Run straight from the git repository (no clone needed)
+uvx --from "git+https://github.com/TEN-SPIT/AVEVA_Nexus#subdirectory=mcp" nexus-mcp
+
+# or from a local clone
+uvx --from <repo>\mcp nexus-mcp
+```
+
+The server speaks MCP over stdio, so you normally do not run it by hand; register it in your client.
+
+### Register it in Claude Code
+```
+claude mcp add nexus --scope user -e NEXUS_LOCAL_DIR=<folder-with-Start-Nexus.ps1-and-config> -- uvx --from "git+https://github.com/TEN-SPIT/AVEVA_Nexus#subdirectory=mcp" nexus-mcp
+```
+Put the server name before `-e`. Restart Claude Code to see the tools (`mcp__nexus__*`). Add
+`-e NEXUS_URL=...` / `-e NEXUS_TOKEN=...` if Nexus is not on `http://localhost:5001`. The full list of
+variables is below. `NEXUS_LOCAL_DIR` is only needed for `start_e3d`/`stop_e3d`, and
+`NEXUS_WRITABLE_PROJECTS` stays unset (read-only) unless you deliberately allow writing to a test project.
+
+### Register it from a clone (development)
 ```
 claude mcp add nexus --scope user -- <path-to>\uv.exe run --directory <repo>\mcp server.py
 ```
-Add `-e NAME=value` for the environment variables below (put the server name before `-e`).
-Restart Claude Code to see the tools (`mcp__nexus__*`).
 
 ## Tools
 | Tool | What it does |

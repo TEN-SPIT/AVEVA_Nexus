@@ -430,7 +430,7 @@ wheels = [
 [[package]]
 name = "nexus-mcp"
 version = "0.1.0"
-source = { virtual = "." }
+source = { editable = "." }
 dependencies = [
     { name = "httpx" },
     { name = "mcp", extra = ["cli"] },
@@ -444,7 +444,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "httpx", specifier = ">=0.28.1" },
-    { name = "mcp", extras = ["cli"], specifier = ">=2.3.0" },
+    { name = "mcp", extras = ["cli"], specifier = ">=2.3,<3" },
 ]
 
 [package.metadata.requires-dev]

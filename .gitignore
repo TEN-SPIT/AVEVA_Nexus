@@ -441,3 +441,6 @@ tests/**/__pycache__/
 mcp/.venv/
 .pytest_cache/
 .superpowers/
+
+# Sensitive-data scanner: local project-specific patterns (never commit)
+.sensitive-patterns
