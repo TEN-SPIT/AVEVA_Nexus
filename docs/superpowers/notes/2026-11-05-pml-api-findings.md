@@ -1,6 +1,6 @@
 # E3D PML / API findings (Task 1 spike)
 
-Verified on 2026-11-05 against a running local E3D 3.1 (Design Mk3.1.8.0, project PROJ, MDB `example-mdb`), through a
+Verified on 2026-11-05 against a running local E3D 3.1 (Design Mk3.1.8.0, an example project and MDB), through a
 throwaway probe endpoint (not committed). Each answer is what later tasks rely on.
 
 ## 1. Detecting PML command errors
@@ -41,8 +41,8 @@ throwaway probe endpoint (not committed). Each answer is what later tasks rely o
   `GetElementType`. Cache the name set.
 
 ## 6. Session info
-- `Project.CurrentProject`: `Code` = `PROJ`, `Name` = `PROJ`, `UserName` = `SYSTEM` (E3D user), `LoginUser` = Windows user.
-- `MDB.CurrentMDB.Name` = `example-mdb`.
+- `Project.CurrentProject`: `Code` and `Name` = the project code, `UserName` = the E3D user, `LoginUser` = the Windows user.
+- `MDB.CurrentMDB.Name` = the MDB name.
 - E3D version: `FileVersionInfo` of `Aveva.Core.Database` gives the monitor `1.3.12.0`; the module banner says
   `Design Mk3.1.8.0`. Use `Process.GetCurrentProcess().MainModule.FileVersionInfo.ProductVersion` for `E3dVersion` and
   report `null` if it throws.

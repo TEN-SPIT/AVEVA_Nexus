@@ -8,7 +8,7 @@
 
 **Tech Stack:** C# / .NET Framework 4.8, x86, PML.NET (E3D 3.1), Newtonsoft.Json 13.0.1 (already a dependency). Build with the VS BuildTools Roslyn `csc.exe`. Python 3.12 + `pytest` for integration tests only.
 
-**Spec:** `the project design note (kept outside this repository)` (sections "Endpoints actuals", "Endpoints proposats", "Seguretat"). Context and history: `...\AVEVA Nexus MCP - Bitàcola.md` and `...\AVEVA Nexus MCP - Desplegament i execució.md` in the same folder.
+**Spec:** the project design note (kept outside this repository) (sections "Endpoints actuals", "Endpoints proposats", "Seguretat"). Context and history: `...\AVEVA Nexus MCP - Bitàcola.md` and `...\AVEVA Nexus MCP - Desplegament i execució.md` in the same folder.
 
 ## Global Constraints
 
@@ -48,7 +48,7 @@ Inputs and conditions the spec implies but no endpoint listing exercises (each h
 - Produces: `scripts/build.ps1 [-E3dDir <path>] [-Out <dir>]` compiles `AVEVA_Nexus/AVEVA_Nexus/**/*.cs` to `<Out>\AVEVA_Nexux_Addin.dll` (default `out\`, default E3dDir `C:\Program Files (x86)\AVEVA\Everything3D3.1`) and exits non-zero on compile errors.
 - Produces: `scripts/run-tests.ps1` compiles `tests/Nexus.Tests/*.cs` plus the AVEVA-free sources (`Exceptions/*.cs`, `Validation/*.cs`, `Models/*.cs`, `Query/*.cs` as they appear) into `out\Nexus.Tests.exe`, runs it, exits non-zero if any check fails.
 - Produces: `Check` helper: `Check.Equal<T>(T expected, T actual, string name)`, `Check.Throws<TEx>(Action act, string name)` returning a failing count surfaced by `Program.Main` as the exit code. Tests register themselves with `Program.Run(string name, Action test)`.
-- Produces: `scripts/deploy-local.ps1 -Target <dir>` : builds, stops the local E3D session via `<Target>\Stop-Nexus.ps1 -Project PROJ`, copies the DLL and `Newtonsoft.Json.dll` to `<Target>\bin`, starts with `<Target>\Start-Nexus.ps1 -Project PROJ -NoWait` (plus `-Writable` when the deploy script is called with `-Writable`, available from Task 8), then polls `http://localhost:5001/api/Health` up to 120 s.
+- Produces: `scripts/deploy-local.ps1 -Target <dir>` : builds, stops the local E3D session via `<Target>\Stop-Nexus.ps1 -Project <code>`, copies the DLL and `Newtonsoft.Json.dll` to `<Target>\bin`, starts with `<Target>\Start-Nexus.ps1 -Project <code> -NoWait` (plus `-Writable` when the deploy script is called with `-Writable`, available from Task 8), then polls `http://localhost:5001/api/Health` up to 120 s.
 - Produces: `tests/integration/conftest.py` exposing fixtures `base_url` (env `NEXUS_URL`, default `http://localhost:5001`) and `api(method, path, body=None) -> (status:int, json:dict)` using `urllib`, plus auto-skip of the whole suite when `/api/Health` is unreachable.
 
 - [ ] **Step 1: Create the branch and commit the current baseline.** `git checkout -b feat/generic-query-api` in `<repo>`; review `git diff` for secrets (there must be none); commit the existing working-tree changes (Newtonsoft instead of System.Text.Json, `Stop()` fix, token/CORS/Health in `SimpleHttpServer`/`Router`, `NEXUS_PORT` auto-start in the addin, csproj reference changes) with message `fix: build on .NET Framework 4.8, add token auth, CORS, health and addin autostart`.
@@ -101,7 +101,7 @@ Unknowns that decide later tasks. Resolve them on the running local E3D and reco
   - `string Scope(string value)` -> `null` if null/blank; else a `DbRef` or a name starting with `/` (`[A-Za-z0-9_\-/.]`).
   - `string Where(string value)` -> `null` if null/blank; else the trimmed expression, rejected if it contains `;`, newline, `$`, a backtick, or (case-insensitive, as whole words) any of `SAVEWORK`, `DELETE`, `REMOVE`, `NEW`, `UNDO`, `STORE`, `MACRO`, `FINISH`, `QUIT`, `ONERROR`, `HANDLE`; also rejected if parentheses are unbalanced or length > 500.
 
-- [ ] **Step 1: Write failing tests** with these names and assertions: `Type_accepts_PIPE_and_uppercases("pipe" -> "PIPE")`, `Type_rejects_space_and_semicolon("PIPE;x", "A B")`, `Attribute_accepts_UDA(":TPSPEC")`, `DbRef_accepts("=123/1")` and `DbRef_rejects("garbage", "=1", "=1/2;x")`, `Scope_null_is_null`, `Scope_accepts_name_and_dbref("/SITE-1", "=1/2")`, `Where_accepts("(:TPSPEC EQ 'A') AND (BORE GT 50)")`, `Where_rejects_each_forbidden("a; b", "a\nb", "$M/x", "SAVEWORK", "delete all", "NEW PIPE", "(unbalanced")`, `Where_does_not_reject_substrings("RENEWAL EQ 1")` (whole-word match only). Each rejection asserts `NexusException` with `StatusCode == 400`.
+- [ ] **Step 1: Write failing tests** with these names and assertions: `Type_accepts_PIPE_and_uppercases("pipe" -> "PIPE")`, `Type_rejects_space_and_semicolon("PIPE;x", "A B")`, `Attribute_accepts_UDA(":TPSPEC")`, `DbRef_accepts("=123/45")` and `DbRef_rejects("garbage", "=1", "=1/2;x")`, `Scope_null_is_null`, `Scope_accepts_name_and_dbref("/SITE-1", "=1/2")`, `Where_accepts("(:TPSPEC EQ 'A') AND (BORE GT 50)")`, `Where_rejects_each_forbidden("a; b", "a\nb", "$M/x", "SAVEWORK", "delete all", "NEW PIPE", "(unbalanced")`, `Where_does_not_reject_substrings("RENEWAL EQ 1")` (whole-word match only). Each rejection asserts `NexusException` with `StatusCode == 400`.
 - [ ] **Step 2: Run `scripts\run-tests.ps1`** -> Expected: FAIL (type not defined / compile error).
 - [ ] **Step 3: Implement `PmlInputValidator`** with `System.Text.RegularExpressions`; keep the forbidden-word list in one `static readonly string[]`.
 - [ ] **Step 4: Run `scripts\run-tests.ps1`** -> Expected: all passed.
@@ -204,7 +204,7 @@ Unknowns that decide later tasks. Resolve them on the running local E3D and reco
 - `ReadOnly` reflects `NEXUS_READONLY` (see Task 8; until then, computed by the same helper `ReadOnlyMode.IsOn`).
 - Produces: `static class ReadOnlyMode { static bool IsOn { get; } }` in `Config/ReadOnlyMode.cs` (true unless env `NEXUS_READONLY == "0"`).
 
-- [ ] **Step 1: Write failing tests:** `test_session_info_has_project_and_module` (`Data.Project == "PROJ"`, `Data.Module` non-empty, `Data.ReadOnly` is a bool), and a unit test `ReadOnlyMode_defaults_on_and_off_with_0` in `tests/Nexus.Tests` (set/unset the env var inside the test and restore it).
+- [ ] **Step 1: Write failing tests:** `test_session_info_has_project_and_module` (`Data.Project` non-empty, `Data.Module` non-empty, `Data.ReadOnly` is a bool), and a unit test `ReadOnlyMode_defaults_on_and_off_with_0` in `tests/Nexus.Tests` (set/unset the env var inside the test and restore it).
 - [ ] **Step 2: Run both suites** -> Expected: FAIL.
 - [ ] **Step 3: Implement.**
 - [ ] **Step 4: Deploy locally, run both suites** -> Expected: all passed.

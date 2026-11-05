@@ -1,12 +1,12 @@
-"""GET /api/Session/Info. Assumes the PROJ project."""
+"""GET /api/Session/Info."""
 
 
 def test_session_info_has_project_mdb_and_module(api):
     status, body = api("GET", "/api/Session/Info")
     assert status == 200 and body["Success"] is True
     info = body["Data"]
-    assert info["Project"] == "PROJ"
-    assert info["Mdb"] == "example-mdb"
+    assert info["Project"]
+    assert info["Mdb"]
     assert info["User"]
     assert info["Module"]
     assert info["E3dVersion"]

@@ -1,8 +1,7 @@
 """Element/Get, Element/Children, Element/AttributeList (+ the original Element/Attribute).
 
-Assumes the PROJ project: site =123/1 holds zones.
+Project-agnostic: the site with zones comes from the site_with_zones fixture in conftest.py.
 """
-SITE_WITH_ZONES = "=123/1"
 
 
 def first_site_refs(api, n):
@@ -42,8 +41,8 @@ def test_get_requires_refs_and_post(api):
     assert api("GET", "/api/Element/Get")[0] == 405
 
 
-def test_children_of_site_are_zones(api):
-    status, body = api("GET", f"/api/Element/Children?dbref={SITE_WITH_ZONES}")
+def test_children_of_site_are_zones(api, site_with_zones):
+    status, body = api("GET", f"/api/Element/Children?dbref={site_with_zones['dbref']}")
     assert status == 200
     data = body["Data"]
     assert data["Owner"].startswith("=")
@@ -52,18 +51,18 @@ def test_children_of_site_are_zones(api):
         assert child["type"] == "ZONE"
         assert child["dbref"].startswith("=") and child["name"].startswith("/")
 
-    status, body = api("GET", f"/api/Element/Children?dbref={SITE_WITH_ZONES}&type=ZONE")
+    status, body = api("GET", f"/api/Element/Children?dbref={site_with_zones['dbref']}&type=ZONE")
     assert status == 200 and len(body["Data"]["Children"]) == len(data["Children"])
 
-    status, body = api("GET", f"/api/Element/Children?dbref={SITE_WITH_ZONES}&type=PIPE")
+    status, body = api("GET", f"/api/Element/Children?dbref={site_with_zones['dbref']}&type=PIPE")
     assert status == 200 and body["Data"]["Children"] == []
 
 
-def test_children_invalid_inputs(api):
+def test_children_invalid_inputs(api, site_with_zones):
     assert api("GET", "/api/Element/Children?dbref==0/0")[0] == 404
     assert api("GET", "/api/Element/Children?dbref=garbage")[0] == 400
     assert api("GET", "/api/Element/Children")[0] == 400
-    assert api("GET", f"/api/Element/Children?dbref={SITE_WITH_ZONES}&type=FOO")[0] == 400
+    assert api("GET", f"/api/Element/Children?dbref={site_with_zones['dbref']}&type=FOO")[0] == 400
     assert api("GET", "/api/Health")[0] == 200
 
 
@@ -82,7 +81,7 @@ def test_attributelist_unknown_or_missing_type_is_400(api):
     assert api("GET", "/api/Health")[0] == 200
 
 
-def test_original_single_attribute_endpoint_still_works(api):
-    status, body = api("GET", f"/api/Element/Attribute?dbref={SITE_WITH_ZONES}&attribute=NAME")
+def test_original_single_attribute_endpoint_still_works(api, site_with_zones):
+    status, body = api("GET", f"/api/Element/Attribute?dbref={site_with_zones['dbref']}&attribute=NAME")
     assert status == 200
     assert body["Data"].startswith("/")

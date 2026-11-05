@@ -390,7 +390,7 @@ POST /api/Element/Query
 ```json
 {
   "type": "PIPE",
-  "scope": "=123/2",
+  "scope": "=123/45",
   "where": "(BORE GT 300)",
   "attributes": ["NAME", "BORE", ":MY-UDA"],
   "limit": 100,
@@ -407,7 +407,7 @@ and the model. `limit` defaults to 100 and is capped at 1000. The result is a ta
 
 ```json
 { "Total": 4, "Offset": 0, "Limit": 100, "Columns": ["dbref", "NAME", "BORE"],
-  "Rows": [ { "dbref": "=123/562", "NAME": "/PIPE-1", "BORE": "350mm" } ] }
+  "Rows": [ { "dbref": "=123/46", "NAME": "/PIPE-1", "BORE": "350mm" } ] }
 ```
 
 ### Read attributes of several elements
@@ -417,7 +417,7 @@ POST /api/Element/Get
 ```
 
 ```json
-{ "refs": ["=123/562", "=123/546"], "attributes": ["NAME", "TYPE"] }
+{ "refs": ["=123/46", "=123/47"], "attributes": ["NAME", "TYPE"] }
 ```
 
 Same table shape, rows in the order of `refs` (max 1000). A dbref that does not exist gives 404.
@@ -617,13 +617,13 @@ Windows, PowerShell, E3D 3.1 installed (its DLLs are used as references) and Vis
 ```powershell
 scripts\build.ps1                    # -> out\AVEVA_Nexux_Addin.dll
 scripts\run-tests.ps1                # unit tests, no E3D needed
-scripts\deploy-local.ps1 -Target <runtime folder> [-Writable]   # rebuild and restart a local E3D TTY session
+scripts\deploy-local.ps1 -Target <runtime folder> -Project <code> [-Writable]   # rebuild and restart a local E3D TTY session
 python -m pytest tests/integration -m "not readonly"   # against a session started with -Writable
 python -m pytest tests/integration -m "not writable"   # against a session started in the default read-only mode
 ```
 
 The integration tests expect a running Nexus on `http://localhost:5001` (override with `NEXUS_URL` / `NEXUS_TOKEN`)
-and the PROJ project; they skip themselves when it is not reachable. `<runtime folder>` is the folder that holds the
+and any project that has a site with zones holding pipes (they discover their own test elements); they skip themselves when it is not reachable. `<runtime folder>` is the folder that holds the
 launcher scripts for your E3D project (`Start-Nexus.ps1`, `Stop-Nexus.ps1`, `config\`, `bin\`).
 
 Findings about the E3D APIs that shaped this design are in `docs/superpowers/notes/2026-11-05-pml-api-findings.md`.

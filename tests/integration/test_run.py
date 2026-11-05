@@ -16,8 +16,8 @@ def test_run_returns_requested_variables_with_types(api):
     assert data["Values"] == {"nxT": "abc", "nxN": 42, "nxB": True}
 
 
-def test_run_collects_array(api):
-    status, body = run(api, "var !!nxArr collect all ZONE for =123/1", ["nxArr"])
+def test_run_collects_array(api, site_with_zones):
+    status, body = run(api, f"var !!nxArr collect all ZONE for {site_with_zones['dbref']}", ["nxArr"])
     assert status == 200
     values = body["Data"]["Values"]["nxArr"]
     assert isinstance(values, list) and len(values) >= 1

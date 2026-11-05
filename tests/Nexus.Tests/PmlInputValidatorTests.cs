@@ -52,7 +52,7 @@ namespace Nexus.Tests
             });
 
             Program.Run("DbRef_accepts_valid_ref", () =>
-                Check.Equal("=123/1", PmlInputValidator.DbRef("=123/1"), "ref"));
+                Check.Equal("=123/45", PmlInputValidator.DbRef("=123/45"), "ref"));
 
             Program.Run("DbRef_rejects_garbage", () =>
             {

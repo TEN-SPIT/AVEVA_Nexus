@@ -1,8 +1,7 @@
 """POST /api/Element/Query. Read-only; works in any mode.
 
-These tests assume the PROJ project (MDB example-mdb): zone =123/2 holds pipes.
+Project-agnostic: elements are discovered by the fixtures in conftest.py (site_with_zones, zone_with_pipes).
 """
-ZONE_WITH_PIPES = "=123/2"
 
 
 def query(api, **body):
@@ -13,29 +12,29 @@ def test_query_all_sites_has_total_and_rows(api):
     status, body = query(api, type="SITE", attributes=["NAME"], limit=5)
     assert status == 200 and body["Success"] is True
     data = body["Data"]
-    assert data["Total"] >= 5
-    assert len(data["Rows"]) == 5
+    assert data["Total"] >= 1
+    assert len(data["Rows"]) == min(5, data["Total"])
     assert data["Columns"] == ["dbref", "NAME"]
     for row in data["Rows"]:
         assert row["dbref"].startswith("=")
         assert row["NAME"].startswith("/")
 
 
-def test_query_scope_and_where(api):
-    status, body = query(api, type="PIPE", scope=ZONE_WITH_PIPES, attributes=["NAME", "BORE"], limit=3)
+def test_query_scope_and_where(api, zone_with_pipes):
+    status, body = query(api, type="PIPE", scope=zone_with_pipes, attributes=["NAME", "BORE"], limit=3)
     assert status == 200
     assert body["Data"]["Total"] >= 1
     assert all(r["dbref"] for r in body["Data"]["Rows"])
 
-    status, body = query(api, type="PIPE", scope=ZONE_WITH_PIPES, where="(NAME EQ '/DOES-NOT-EXIST')")
+    status, body = query(api, type="PIPE", scope=zone_with_pipes, where="(NAME EQ '/DOES-NOT-EXIST')")
     assert status == 200
     assert body["Data"]["Total"] == 0 and body["Data"]["Rows"] == []
 
 
-def test_query_where_filters_rows(api):
-    _, first = query(api, type="PIPE", scope=ZONE_WITH_PIPES, attributes=["NAME"], limit=1)
+def test_query_where_filters_rows(api, zone_with_pipes):
+    _, first = query(api, type="PIPE", scope=zone_with_pipes, attributes=["NAME"], limit=1)
     name = first["Data"]["Rows"][0]["NAME"]
-    status, body = query(api, type="PIPE", scope=ZONE_WITH_PIPES, attributes=["NAME"], where=f"(NAME EQ '{name}')")
+    status, body = query(api, type="PIPE", scope=zone_with_pipes, attributes=["NAME"], where=f"(NAME EQ '{name}')")
     assert status == 200
     assert body["Data"]["Total"] == 1
     assert body["Data"]["Rows"][0]["NAME"] == name
@@ -104,25 +103,24 @@ def test_query_nonexistent_scope_is_404(api):
     assert api("GET", "/api/Health")[0] == 200
 
 
-def test_query_scope_by_name_works(api):
-    # /SITE-1 is the name of site =123/1, which holds zones
-    status, body = query(api, type="ZONE", scope="/SITE-1")
-    assert status == 200 and body["Data"]["Total"] >= 1
-    status, by_ref = query(api, type="ZONE", scope="=123/1")
-    assert by_ref["Data"]["Total"] == body["Data"]["Total"]
+def test_query_scope_by_name_works(api, site_with_zones):
+    status, by_name = query(api, type="ZONE", scope=site_with_zones["name"])
+    assert status == 200 and by_name["Data"]["Total"] >= 1
+    status, by_ref = query(api, type="ZONE", scope=site_with_zones["dbref"])
+    assert by_ref["Data"]["Total"] == by_name["Data"]["Total"]
 
 
-def test_parallel_queries_do_not_interleave(api):
+def test_parallel_queries_do_not_interleave(api, site_with_zones, zone_with_pipes):
     # Shared PML globals (!!nexusQ ...) must never mix results of simultaneous queries.
     import concurrent.futures
 
     cases = [
         {"type": "SITE", "attributes": ["NAME"], "limit": 50},
-        {"type": "ZONE", "scope": "=123/1", "attributes": ["NAME"]},
-        {"type": "PIPE", "scope": ZONE_WITH_PIPES, "attributes": ["NAME", "BORE"], "limit": 50},
+        {"type": "ZONE", "scope": site_with_zones["dbref"], "attributes": ["NAME"]},
+        {"type": "PIPE", "scope": zone_with_pipes, "attributes": ["NAME", "BORE"], "limit": 50},
     ]
     serial = [query(api, **c)[1]["Data"] for c in cases]
-    assert len({d["Total"] for d in serial}) == 3  # the three cases really differ
+    assert len({d["Total"] for d in serial}) >= 2  # the cases really differ
 
     def work(i):
         status, body = query(api, **cases[i % 3])

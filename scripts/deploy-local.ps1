@@ -1,9 +1,9 @@
 # Builds the addin and restarts the local E3D (TTY) session with it.
 # <Target> is the local runtime folder that holds Start-Nexus.ps1, Stop-Nexus.ps1, config\ and bin\
-# (e.g. <runtime folder>). -Writable starts the session with NEXUS_READONLY=0.
+# (for example a folder next to the repository). -Writable starts the session with NEXUS_READONLY=0.
 param(
     [Parameter(Mandatory = $true)][string]$Target,
-    [string]$Project = 'PROJ',
+    [Parameter(Mandatory = $true)][string]$Project,   # project code, as named in the launcher's projects.json
     [int]$Port = 5001,
     [switch]$Writable,
     [string]$E3dDir = 'C:\Program Files (x86)\AVEVA\Everything3D3.1'
