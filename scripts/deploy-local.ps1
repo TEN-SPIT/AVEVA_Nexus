@@ -24,6 +24,9 @@ param(
     [string]$E3dDir = 'C:\Program Files (x86)\AVEVA\Everything3D3.1'
 )
 $ErrorActionPreference = 'Stop'
+# Old usage was "-Target <dir> -Project X [-Writable]" = rebuild AND restart: keep that meaning.
+if (($Project -or $Writable) -and -not $Restart) { Write-Host '-Project/-Writable given: restarting the TTY session too (-Restart)'; $Restart = $true }
+$stoppedEarly = $false
 $Runtime = (Resolve-Path $Runtime).Path
 $cur = Join-Path $Runtime 'current.txt'
 $prev = Join-Path $Runtime 'current.txt.prev'
@@ -68,7 +71,14 @@ if ($Rollback) {
         if (-not $Version) { throw 'Could not read the version from the build output' }
     }
     $name = $Version -replace '[^A-Za-z0-9._+-]', '_'
+    # A "-dirty" build gets the same name after every edit on one commit: make each one unique.
+    if ($name -match '-dirty$' -and -not $DllPath) { $name += '.' + (Get-Date -Format 'yyyyMMddHHmmss') }
     $dest = Join-Path $Runtime "versions\$name"
+    if ($Restart -and $Project) {
+        # Stop first: the running session may hold the DLL of the folder -Force is about to replace.
+        & (Join-Path $Runtime 'Stop-Nexus.ps1') -Project $Project
+        $stoppedEarly = $true
+    }
     if (Test-Path $dest) {
         if (-not $Force) { throw "Version folder already exists: $dest (use -Force to replace it)" }
         Remove-Item $dest -Recurse -Force
@@ -87,7 +97,7 @@ if ($Rollback) {
 
 if ($Restart) {
     if (-not $Project) { throw '-Restart needs -Project <code>' }
-    & (Join-Path $Runtime 'Stop-Nexus.ps1') -Project $Project
+    if (-not $stoppedEarly) { & (Join-Path $Runtime 'Stop-Nexus.ps1') -Project $Project }
     Start-Sleep -Seconds 3
     $startArgs = @{ Project = $Project; NoWait = $true }
     if ($Writable) { $startArgs['Writable'] = $true }

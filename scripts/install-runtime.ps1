@@ -25,7 +25,12 @@ $Runtime = (Resolve-Path $Runtime).Path
 
 function Copy-Template([string]$From, [string]$To, [switch]$Overwrite) {
     if ((Test-Path $To) -and -not $Overwrite) {
-        if ((Get-FileHash $From).Hash -ne (Get-FileHash $To).Hash) { "  kept (differs, use -Force): $(Split-Path -Leaf $To)" }
+        if ((Get-FileHash $From).Hash -ne (Get-FileHash $To).Hash) {
+            "  kept (differs, use -Force): $(Split-Path -Leaf $To)"
+            if (Select-String -Path $To -Pattern 'bin\\AVEVA_Nexux_Addin' -Quiet) {
+                Write-Warning "$(Split-Path -Leaf $To) is an OLD launcher that loads bin\: versions\ deployed by deploy-local are ignored until you rerun with -Force"
+            }
+        }
         return
     }
     if ((Test-Path $To) -and (Get-FileHash $From).Hash -eq (Get-FileHash $To).Hash) { return }
