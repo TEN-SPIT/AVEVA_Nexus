@@ -1,6 +1,7 @@
 ﻿using AVEVA_Nexus.Exceptions;
 using AVEVA_Nexus.Logging;
 using AVEVA_Nexus.Models;
+using AVEVA_Nexus.Validation;
 using Newtonsoft.Json;
 using System;
 using System.IO;
@@ -22,23 +23,47 @@ namespace AVEVA_Nexus.Http
         private static string Token =>
             Environment.GetEnvironmentVariable("NEXUS_TOKEN");
 
+        // Requests processed at once (they queue on AvevaGate anyway); above it the answer is 429.
+        public const int MaxInFlight = 16;
+        private static readonly RequestGuards.InFlightLimiter InFlight = new RequestGuards.InFlightLimiter(MaxInFlight);
+
+        public bool IsRunning
+        {
+            get
+            {
+                try { return _listener != null && _listener.IsListening; }
+                catch (ObjectDisposedException) { return false; }
+            }
+        }
+
         public void Start()
         {
-            bool localOnly = Prefix.StartsWith("http://localhost")
-                          || Prefix.StartsWith("http://127.0.0.1");
+            // Starting twice used to replace the listener and the cancellation token under the loop that
+            // was already serving, which broke it. Starting a running gateway is now a no-op.
+            if (IsRunning)
+            {
+                Console.WriteLine("HTTP Server already running, Start ignored");
+                return;
+            }
+
+            // Exact loopback host: "+", "*" or a lookalike such as localhost.example.com is not local.
+            bool localOnly = RequestGuards.IsLocalPrefix(Prefix);
 
             if (!localOnly && string.IsNullOrEmpty(Token))
                 throw new InvalidOperationException(
                     "NEXUS_TOKEN must be set when listening on non-local prefixes.");
 
-            _cts = new CancellationTokenSource();
+            var cts = new CancellationTokenSource();
+            var listener = new HttpListener();
+            listener.Prefixes.Add(Prefix);
+            listener.Start();   // throws if the port is taken; the fields below are only set on success
 
-            _listener = new HttpListener();
-            _listener.Prefixes.Add(Prefix);
+            _cts = cts;
+            _listener = listener;
 
-            _listener.Start();
-
-            Task.Run(() => ListenLoop());
+            // The loop gets its own listener and token, so a Stop followed by a Start cannot
+            // leave an old loop running against the new listener.
+            Task.Run(() => ListenLoop(listener, cts));
 
             Console.WriteLine( "HTTP Server Started : " + Prefix);
         }
@@ -56,21 +81,25 @@ namespace AVEVA_Nexus.Http
             Console.WriteLine("HTTP Server Stopped");
         }
 
-        private async Task ListenLoop()
+        private async Task ListenLoop(HttpListener listener, CancellationTokenSource cts)
         {
-            while (!_cts.IsCancellationRequested)
+            while (!cts.IsCancellationRequested)
             {
                 try
                 {
                     var context =
-                        await _listener.GetContextAsync();
+                        await listener.GetContextAsync();
 
                     _ = Task.Run(
                         () => ProcessRequest(context));
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine(ex.Message);
+                    Trace.Line(ex.Message);
+                    bool stillListening;
+                    try { stillListening = listener.IsListening; }
+                    catch (ObjectDisposedException) { stillListening = false; }
+                    if (!stillListening) break;   // closed under us: do not spin on the error
                 }
             }
         }
@@ -80,14 +109,14 @@ namespace AVEVA_Nexus.Http
         {
             try
             {
-                Console.WriteLine("========================================");
-                Console.WriteLine("HTTP REQUEST RECEIVED");
-                Console.WriteLine("========================================");
+                Trace.Line("========================================");
+                Trace.Line("HTTP REQUEST RECEIVED");
+                Trace.Line("========================================");
 
-                Console.WriteLine($"RawUrl       : {context.Request.RawUrl}");
-                Console.WriteLine($"AbsolutePath : {context.Request.Url.AbsolutePath}");
-                Console.WriteLine($"HttpMethod   : {context.Request.HttpMethod}");
-                Console.WriteLine($"Url          : {context.Request.Url}");
+                Trace.Line($"RawUrl       : {context.Request.RawUrl}");
+                Trace.Line($"AbsolutePath : {context.Request.Url.AbsolutePath}");
+                Trace.Line($"HttpMethod   : {context.Request.HttpMethod}");
+                Trace.Line($"Url          : {context.Request.Url}");
 
                 string path =
                     context.Request.Url.AbsolutePath;
@@ -122,8 +151,8 @@ namespace AVEVA_Nexus.Http
 
                 bool isHealth = path.TrimEnd('/').Equals("/api/Health", StringComparison.OrdinalIgnoreCase);
 
-                if (!isHealth && !string.IsNullOrEmpty(Token)
-                    && context.Request.Headers["X-Nexus-Token"] != Token)
+                if (!isHealth && !string.IsNullOrEmpty(token)
+                    && !RequestGuards.TokenMatches(token, context.Request.Headers["X-Nexus-Token"]))
                 {
                     await WriteResponse(context, 401, new ApiResponse
                     {
@@ -136,31 +165,27 @@ namespace AVEVA_Nexus.Http
                 // Health needs no E3D access: answer it without building a Router (whose controllers create providers).
                 if (isHealth)
                 {
-                    await WriteResponse(context, 200, new ApiResponse { Success = true, Data = "ok" });
+                    await WriteResponse(context, 200, new ApiResponse { Success = true, Data = HealthInfo.Current() });
                     return;
                 }
 
-                NexusLogger.Info(
-                    $"{context.Request.HttpMethod} {path}");
-
-                var router = new Router();
-
-                string body = await ReadBody( context.Request);
-
-                var routeContext = new RouteContext
+                if (!InFlight.TryEnter())
                 {
-                    Method = context.Request.HttpMethod,
-                    Path = context.Request.Url.AbsolutePath,
-                    Query = context.Request.QueryString,
-                    Body = body,
-                };
-
-                var result = router.Route(routeContext);
-
-                await WriteResponse(
-                    context,
-                    200,
-                    result);
+                    await WriteResponse(context, 429, new ApiResponse
+                    {
+                        Success = false,
+                        Error = "Too many requests in progress (max " + MaxInFlight + "); try again later"
+                    });
+                    return;
+                }
+                try
+                {
+                    await Dispatch(context, path);
+                }
+                finally
+                {
+                    InFlight.Exit();
+                }
             }
             catch (NexusException ex)
             {
@@ -190,6 +215,31 @@ namespace AVEVA_Nexus.Http
             }
         }
 
+        private async Task Dispatch(HttpListenerContext context, string path)
+        {
+            NexusLogger.Info(
+                $"{context.Request.HttpMethod} {path}");
+
+            var router = new Router();
+
+            string body = await ReadBody( context.Request);
+
+            var routeContext = new RouteContext
+            {
+                Method = context.Request.HttpMethod,
+                Path = context.Request.Url.AbsolutePath,
+                Query = RequestGuards.ParseQuery(context.Request.RawUrl),
+                Body = body,
+            };
+
+            var result = router.Route(routeContext);
+
+            await WriteResponse(
+                context,
+                200,
+                result);
+        }
+
         private async Task WriteResponse(
             HttpListenerContext context,
             int statusCode,
@@ -207,7 +257,7 @@ namespace AVEVA_Nexus.Http
                 statusCode;
 
             context.Response.ContentType =
-                "application/json";
+                "application/json; charset=utf-8";
 
             context.Response.ContentLength64 =
                 buffer.Length;
@@ -224,13 +274,12 @@ namespace AVEVA_Nexus.Http
         private async Task<string> ReadBody(
             HttpListenerRequest request)
         {
-            using (var reader =
-                new StreamReader(
-                    request.InputStream,
-                    request.ContentEncoding))
-            {
-                return await reader.ReadToEndAsync();
-            }
+            // Bounded (NEXUS_MAX_BODY, default 2 MB -> 413) and UTF-8 unless the Content-Type names a charset.
+            return await RequestGuards.ReadBodyAsync(
+                request.InputStream,
+                request.ContentLength64,
+                RequestGuards.MaxBodyBytes(Environment.GetEnvironmentVariable("NEXUS_MAX_BODY")),
+                RequestGuards.BodyEncoding(request.ContentType));
         }
     }
 }

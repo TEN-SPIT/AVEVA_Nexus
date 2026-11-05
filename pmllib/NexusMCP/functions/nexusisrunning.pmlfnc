@@ -1,0 +1,42 @@
+--|------------------------------------------------------------------------------------------------
+
+-- TRUE si Nexus esta en marcha en esta sesion de E3D, lo haya arrancado el boton, la macro
+-- Start-Nexus-GUI.pmlmac o la sesion TTY: en todos los casos existe la variable global !!nexusHost.
+--
+-- Con la DLL nueva se le pregunta al servidor (HostConfig.IsRunning). Con la antigua, que no tiene
+-- ese metodo, vale "existe !!nexusHost y nexusstop no lo ha parado" (!!nexusRunning = FALSE).
+-- OJO: en PML, .unset() no sirve para esto (falla con objetos de la DLL y el error se pierde).
+
+define function !!nexusisrunning() is BOOLEAN
+
+    -- existe el objeto?
+    !exists = TRUE
+    !host = !!nexusHost
+    handle any
+        !exists = FALSE
+    endhandle
+    if not !exists then
+        return FALSE
+    endif
+
+    -- DLL nueva: el servidor sabe si esta escuchando
+    !answer = TRUE
+    !known = TRUE
+    !answer = !host.IsRunning()
+    handle any
+        !known = FALSE
+    endhandle
+    if !known then
+        return !answer
+    endif
+
+    -- DLL antigua: solo sabemos si nexusstop lo paro
+    !flag = TRUE
+    !flag = !!nexusRunning
+    handle any
+        -- nunca se uso nexusstop: sigue valiendo TRUE
+    endhandle
+
+    return !flag
+
+endfunction

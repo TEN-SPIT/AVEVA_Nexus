@@ -14,7 +14,8 @@ foreach ($d in 'Exceptions', 'Validation', 'Models', 'Query', 'Scripts') {
     $p = Join-Path $src $d
     if (Test-Path $p) { $pure += (Get-ChildItem $p -Filter *.cs).FullName }
 }
-foreach ($f in 'Config\ReadOnlyMode.cs', 'Http\CorsPolicy.cs') {
+foreach ($f in 'Config\ReadOnlyMode.cs', 'Http\CorsPolicy.cs', 'Integration\AvevaGate.cs', 'Logging\Trace.cs', 'Logging\NexusLogger.cs',
+           'Http\RouteContext.cs', 'Http\JsonBody.cs', 'Http\BatchRunner.cs') {
     $p = Join-Path $src $f
     if (Test-Path $p) { $pure += $p }
 }

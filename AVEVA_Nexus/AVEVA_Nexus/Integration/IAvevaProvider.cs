@@ -19,7 +19,7 @@ namespace AVEVA_Nexus.Integration
             string dbref,
             string attribute);
 
-        // dbrefs (e.g. "=123/45") of every element of <type>, optionally filtered by a PML condition and limited
+        // dbrefs (e.g. "=123/45") of every element of <type> (full or short type name), optionally filtered by a PML condition and limited
         // to a scope (dbref or "/NAME"). Inputs must already be validated. Throws NexusException(400) on bad type/PML.
         string[] CollectRefs(string type, string scope, string where);
 
@@ -31,6 +31,17 @@ namespace AVEVA_Nexus.Integration
         string[] GetChildRefs(string dbref, string type);
 
         string GetOwnerRef(string dbref);
+
+        // Dbref of the element a validated reference (dbref or "/NAME", see PmlInputValidator.ElementRef) points
+        // to, or null if there is none. Resolved through the database API (no PML), so any name works.
+        string ResolveRef(string reference);
+
+        // Same for many references in one gate call; a null reference gives an entry with null Dbref/Type.
+        ResolvedElement[] Resolve(IList<string> references);
+
+        // Pre-order walk below an existing element (404 otherwise) down to <depth> levels, listing at most <limit>
+        // items; <type> (full or short name, 400 if unknown) filters what is listed, not what is traversed.
+        TreeResult GetTree(string dbref, int depth, string type, int limit);
 
         // System attributes then UDAs (e.g. ":TP-MTO-AREA") valid for an element type. 400 if the type is unknown.
         string[] GetAttributeNames(string type);

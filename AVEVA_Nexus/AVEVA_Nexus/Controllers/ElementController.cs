@@ -21,9 +21,7 @@ namespace AVEVA_Nexus.Controllers
 
         public ApiResponse Query(string json)
         {
-            QueryRequest request = string.IsNullOrWhiteSpace(json)
-                ? null
-                : JsonConvert.DeserializeObject<QueryRequest>(json);
+            QueryRequest request = Http.JsonBody.Parse<QueryRequest>(json);
 
             return new ApiResponse
             {
@@ -34,16 +32,24 @@ namespace AVEVA_Nexus.Controllers
 
         public ApiResponse Get(string json)
         {
-            GetRequest request = string.IsNullOrWhiteSpace(json)
-                ? null
-                : JsonConvert.DeserializeObject<GetRequest>(json);
+            GetRequest request = Http.JsonBody.Parse<GetRequest>(json);
 
             return new ApiResponse { Success = true, Data = _service.Get(request) };
         }
 
-        public ApiResponse Children(string dbref, string type)
+        public ApiResponse Children(string dbref, string type, string limit)
         {
-            return new ApiResponse { Success = true, Data = _service.Children(dbref, type) };
+            return new ApiResponse { Success = true, Data = _service.Children(dbref, type, limit) };
+        }
+
+        public ApiResponse Resolve(string json)
+        {
+            return new ApiResponse { Success = true, Data = _service.Resolve(Http.JsonBody.Parse<ResolveRequest>(json)) };
+        }
+
+        public ApiResponse Tree(string dbref, string depth, string type, string limit)
+        {
+            return new ApiResponse { Success = true, Data = _service.Tree(dbref, depth, type, limit) };
         }
 
         public ApiResponse AttributeList(string type)

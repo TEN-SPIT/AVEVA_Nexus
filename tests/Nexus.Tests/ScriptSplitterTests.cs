@@ -76,6 +76,47 @@ namespace Nexus.Tests
                 }
             });
 
+            // A handle protects only the statement right before it, so the two must run as one unit.
+            Program.Run("Split_handle_right_after_a_statement_joins_that_statement", () =>
+            {
+                var units = ScriptSplitter.Split("!!a = 1\n!a = !!nofunc()\nhandle any\n  $P caught\nendhandle\n!!z = 2");
+                Check.Equal(3, units.Count, "count");
+                Check.True(units[1].IsBlock, "statement + handle is a block");
+                Check.Equal(2, units[1].FirstLine, "starts at the statement");
+                Check.Equal(5, units[1].LastLine, "ends at endhandle");
+                Check.Equal("!a = !!nofunc()|handle any|$P caught|endhandle", string.Join("|", units[1].Lines), "lines");
+                Check.True(!units[2].IsBlock && units[2].Lines[0] == "!!z = 2", "next line on its own");
+            });
+
+            Program.Run("Split_handle_after_a_comment_still_joins_the_statement_before", () =>
+            {
+                var units = ScriptSplitter.Split("!a = !!nofunc()\n-- protect it\n\nhandle any\nendhandle");
+                Check.Equal(1, units.Count, "one unit");
+                Check.Equal(3, units[0].Lines.Count, "statement + handle lines");
+            });
+
+            Program.Run("Split_handle_right_after_a_block_joins_that_block", () =>
+            {
+                var units = ScriptSplitter.Split("if (1 eq 1) then\n!!b = 2\nendif\nhandle any\nendhandle");
+                Check.Equal(1, units.Count, "one unit");
+                Check.Equal(1, units[0].FirstLine, "first");
+                Check.Equal(5, units[0].LastLine, "last");
+            });
+
+            Program.Run("Split_handle_with_elsehandle_joins_as_a_whole", () =>
+            {
+                var units = ScriptSplitter.Split("!a = 1\nhandle (2,109)\n$P a\nelsehandle any\n$P b\nendhandle\n!b = 2");
+                Check.Equal(2, units.Count, "count");
+                Check.Equal(6, units[0].Lines.Count, "statement + whole handle");
+            });
+
+            Program.Run("Split_joined_statement_keeps_the_users_handle_and_gets_no_guard", () =>
+            {
+                var units = ScriptSplitter.Split("!a = !!nofunc()\nhandle any\n$P mine\nendhandle");
+                var wrapped = PmlGuard.Wrap(units[0].Lines);
+                Check.True(!wrapped.Contains("!!nexusfailed = TRUE"), "the user's handle is the one protecting it");
+            });
+
             Program.Run("Split_empty_script_gives_no_units", () =>
                 Check.Equal(0, ScriptSplitter.Split("  \n\n").Count, "count"));
         }

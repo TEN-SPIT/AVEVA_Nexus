@@ -1,6 +1,8 @@
 ﻿using AVEVA_Nexus.Controllers;
 using AVEVA_Nexus.Exceptions;
+using AVEVA_Nexus.Logging;
 using AVEVA_Nexus.Models;
+using AVEVA_Nexus.Validation;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -59,21 +61,21 @@ namespace AVEVA_Nexus.Http
 
         public object Route(RouteContext context)
         {
-            Console.WriteLine("========================================");
-            Console.WriteLine("ROUTER INVOKED");
-            Console.WriteLine("========================================");
+            Trace.Line("========================================");
+            Trace.Line("ROUTER INVOKED");
+            Trace.Line("========================================");
 
-            Console.WriteLine($"Method      : {context.Method}");
-            Console.WriteLine($"Path        : {context.Path}");
-            Console.WriteLine($"Body        : {context.Body}");
+            Trace.Line($"Method      : {context.Method}");
+            Trace.Line($"Path        : {context.Path}");
+            Trace.Line($"Body        : {context.Body}");
 
             if (context.Query != null)
             {
-                Console.WriteLine("Query Parameters:");
+                Trace.Line("Query Parameters:");
 
                 foreach (string key in context.Query.Keys)
                 {
-                    Console.WriteLine($"  {key} = {context.Query[key]}");
+                    Trace.Line($"  {key} = {context.Query[key]}");
                 }
             }
 
@@ -82,11 +84,11 @@ namespace AVEVA_Nexus.Http
                     .Trim('/')
                     .Split('/');
 
-            Console.WriteLine($"Segment Count : {segments.Length}");
+            Trace.Line($"Segment Count : {segments.Length}");
 
             for (int i = 0; i < segments.Length; i++)
             {
-                Console.WriteLine($"Segment[{i}] = '{segments[i]}'");
+                Trace.Line($"Segment[{i}] = '{segments[i]}'");
             }
 
             if (segments.Length < 2)
@@ -98,17 +100,24 @@ namespace AVEVA_Nexus.Http
 
             if (segments[1].Equals("Health", StringComparison.OrdinalIgnoreCase))
             {
-                return new ApiResponse { Success = true, Data = "ok" };
+                return new ApiResponse { Success = true, Data = HealthInfo.Current() };
             }
 
-            Console.WriteLine($"Root Segment = {segments[0]}");
-            Console.WriteLine($"Module       = {segments[1]}");
+            Trace.Line($"Root Segment = {segments[0]}");
+            Trace.Line($"Module       = {segments[1]}");
+
+            if (segments[1].Equals("Batch", StringComparison.OrdinalIgnoreCase))
+            {
+                RequireMethod(context, "POST");
+                // Sub-requests go through Route again (same read-only rules); BatchRunner refuses nested batches.
+                return new ApiResponse { Success = true, Data = BatchRunner.Run(context.Body, Route) };
+            }
 
             if (segments[1].Equals(
                 "PML",
                 StringComparison.OrdinalIgnoreCase))
             {
-                Console.WriteLine("Routing to PML");
+                Trace.Line("Routing to PML");
                 return RoutePml(context, segments);
             }
 
@@ -116,7 +125,7 @@ namespace AVEVA_Nexus.Http
                 "ELEMENT",
                 StringComparison.OrdinalIgnoreCase))
             {
-                Console.WriteLine("Routing to Element");
+                Trace.Line("Routing to Element");
                 return RouteElement(context, segments);
             }
 
@@ -143,6 +152,7 @@ namespace AVEVA_Nexus.Http
                     "Execute",
                     StringComparison.OrdinalIgnoreCase))
             {
+                RequireMethod(context, "POST");
                 return _pml.Execute(
                     context.Body);
             }
@@ -158,6 +168,8 @@ namespace AVEVA_Nexus.Http
                 segments[2].Equals("Variable",
                 StringComparison.OrdinalIgnoreCase))
             {
+                RequireMethod(context, "GET");
+
                 string variableType =
                     segments[3];
 
@@ -202,7 +214,7 @@ namespace AVEVA_Nexus.Http
             RouteContext context,
             string[] segments)
         {
-            Console.WriteLine("Inside RouteElement");
+            Trace.Line("Inside RouteElement");
 
             if (segments.Length >= 3 &&
                 segments[2].Equals("Query", StringComparison.OrdinalIgnoreCase))
@@ -222,7 +234,21 @@ namespace AVEVA_Nexus.Http
                 segments[2].Equals("Children", StringComparison.OrdinalIgnoreCase))
             {
                 RequireMethod(context, "GET");
-                return _element.Children(context.Query["dbref"], context.Query["type"]);
+                return _element.Children(context.Query["dbref"], context.Query["type"], context.Query["limit"]);
+            }
+
+            if (segments.Length >= 3 &&
+                segments[2].Equals("Resolve", StringComparison.OrdinalIgnoreCase))
+            {
+                RequireMethod(context, "POST");
+                return _element.Resolve(context.Body);
+            }
+
+            if (segments.Length >= 3 &&
+                segments[2].Equals("Tree", StringComparison.OrdinalIgnoreCase))
+            {
+                RequireMethod(context, "GET");
+                return _element.Tree(context.Query["dbref"], context.Query["depth"], context.Query["type"], context.Query["limit"]);
             }
 
             if (segments.Length >= 3 &&
@@ -237,14 +263,16 @@ namespace AVEVA_Nexus.Http
                     "Attribute",
                     StringComparison.OrdinalIgnoreCase))
             {
+                RequireMethod(context, "GET");
+
                 string dbref =
                     context.Query["dbref"];
 
                 string attribute =
                     context.Query["attribute"];
 
-                Console.WriteLine($"DBREF     : {dbref}");
-                Console.WriteLine($"ATTRIBUTE : {attribute}");
+                Trace.Line($"DBREF     : {dbref}");
+                Trace.Line($"ATTRIBUTE : {attribute}");
 
                 if (string.IsNullOrWhiteSpace(dbref))
                 {
@@ -260,9 +288,11 @@ namespace AVEVA_Nexus.Http
                         400);
                 }
 
+                // Same checks as the other element routes: an invalid attribute name reaches
+                // DbAttribute.GetDbAttribute otherwise, and the ref goes through ElementRefs (400/404).
                 return _element.GetAttribute(
-                    dbref,
-                    attribute);
+                    PmlInputValidator.ElementRef(dbref),
+                    PmlInputValidator.Attribute(attribute));
             }
 
             throw new NexusException(

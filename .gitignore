@@ -433,3 +433,11 @@ FodyWeavers.xsd
 out/
 tests/**/__pycache__/
 .pytest_cache/
+
+# Local artefacts (never publish)
+*.mp4
+*.bak
+*.bak-*
+mcp/.venv/
+.pytest_cache/
+.superpowers/

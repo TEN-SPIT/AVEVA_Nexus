@@ -27,7 +27,11 @@ namespace AVEVA_Nexus.Services
             }
 
             string type = PmlInputValidator.Type(request.Type);
-            string scope = PmlInputValidator.Scope(request.Scope);
+            // dbref or "/NAME", resolved through the database API to a dbref (404 if not found), so only a dbref
+            // ever reaches the PML collect line and names with quotes work.
+            string scope = string.IsNullOrWhiteSpace(request.Scope)
+                ? null
+                : ElementRefs.Require(request.Scope, _provider.ResolveRef);
             string where = PmlInputValidator.Where(request.Where);
             List<string> attributes = (request.Attributes ?? new List<string>())
                 .Select(PmlInputValidator.Attribute)

@@ -58,6 +58,37 @@ namespace AVEVA_Nexus.Validation
             return v;
         }
 
+        static readonly Regex LooseDbRefRx = new Regex("^=?\\s*0*([0-9]+)\\s*/\\s*0*([0-9]+)$");
+        const int MaxNameLength = 500;
+
+        public static bool IsDbRef(string value)
+        {
+            return value != null && DbRefRx.IsMatch(value);
+        }
+
+        // An element reference given by a client: a dbref ("=123/45", also "123/45" or "=0123/045", normalised to
+        // "=123/45") or a name starting with '/'. Names are NOT checked against a character whitelist: they are
+        // resolved through the database API (never placed into PML), so names with quotes or other symbols work.
+        // Control characters are rejected. Throws NexusException(400) on anything else.
+        public static string ElementRef(string value)
+        {
+            string v = (value ?? "").Trim();
+            Match m = LooseDbRefRx.Match(v);
+            if (m.Success)
+            {
+                return "=" + m.Groups[1].Value + "/" + m.Groups[2].Value;
+            }
+            if (v.Length >= 2 && v.Length <= MaxNameLength && v[0] == '/')
+            {
+                foreach (char c in v)
+                {
+                    if (char.IsControl(c)) throw Bad("element name (control character)");
+                }
+                return v;
+            }
+            throw Bad("element reference (expected a dbref =<number>/<number> or a name starting with '/')");
+        }
+
         public static string Scope(string value)
         {
             if (string.IsNullOrWhiteSpace(value)) return null;

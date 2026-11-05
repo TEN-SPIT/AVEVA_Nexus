@@ -1,0 +1,102 @@
+--|------------------------------------------------------------------------------------------------
+
+-- Arranca Nexus (pasarela HTTP para Claude / MCP) dentro de ESTA sesion de E3D, o cambia su modo
+-- si ya estaba en marcha. Lo llaman los botones de uic\NexusMCP.uic y tambien se puede escribir en la
+-- ventana de comandos:
+--
+--     !!nexusstart(TRUE)      con permiso de ESCRITURA
+--     !!nexusstart(FALSE)     solo lectura
+--
+-- Usa el usuario y el modelo de la sesion actual: no pide contrasena.
+-- Puerto: 5001, o el valor de !!nexusPort si esta definido, o el de la variable de entorno NEXUS_PORT.
+-- Solo escucha en localhost. Se puede pulsar varias veces: si ya esta en marcha no lo vuelve a arrancar,
+-- solo aplica el modo pedido.
+--
+-- Escritura: solo la permite el MCP dentro de las bases de datos autorizadas en projects.json (write_dbs),
+-- y para guardar hay que usar su tool save_work. Cambiar el modo en caliente necesita la DLL nueva
+-- (HostConfig.SetWritable); con la antigua, la escritura solo se activa arrancando E3D con NEXUS_READONLY=0.
+
+define function !!nexusstart(!writable is BOOLEAN)
+
+    -- puerto
+    -- patron usado en toda la funcion: valor por defecto, intento, y 'handle any' solo para recuperarse.
+    -- (No se usa 'elsehandle none': se comporta de forma distinta si antes hubo otro error.)
+    !port = '5001'
+    !envport = ''
+    var !envport evar NEXUS_PORT
+    handle any
+    endhandle
+    if !envport.length() GT 0 then
+        !port = !envport
+    endif
+    !port = !!nexusPort.string()
+    handle any
+    endhandle
+
+    if not !!nexusisrunning() then
+
+        -- La DLL ya puede estar cargada (macro, otro boton): en ese caso NO se vuelve a importar.
+        !ready = TRUE
+        using namespace 'AVEVA_Nexus.Config'
+        !!nexusHost = object HostConfig()
+        handle any
+            !ready = FALSE
+        endhandle
+
+        if not !ready then
+            -- DLL junto a esta funcion: <raiz>\dll\AVEVA_Nexux_Addin.dll
+            !root = !!nexusroot()
+            if !root.length() EQ 0 then
+                !!nexusmsg('NexusMCP no esta en la PMLLIB: no encuentro nexusstart.pmlfnc. Copia la carpeta a la PMLLIB y haz PML REHASH ALL.', TRUE)
+                return
+            endif
+            !dll = !root & '\dll\AVEVA_Nexux_Addin'
+            !dllfile = object FILE(!dll & '.dll')
+            if not !dllfile.exists() then
+                !!nexusmsg('Falta ' & !dll & '.dll', TRUE)
+                return
+            endif
+
+            import '$!dll'
+            handle any
+                !!nexusmsg('No se pudo cargar ' & !dll & '.dll', TRUE)
+                return
+            endhandle
+
+            using namespace 'AVEVA_Nexus.Config'
+            !!nexusHost = object HostConfig()
+        endif
+
+        !!nexusHost.SetPrefix('http://localhost:' & !port & '/')
+        !!nexusHost.Start()
+        handle any
+            !!nexusRunning = FALSE
+            !!nexusmsg('Nexus no ha podido arrancar en el puerto ' & !port & ' (puerto en uso por otro programa).', TRUE)
+            return
+        endhandle
+        !!nexusRunning = TRUE
+
+    endif
+
+    -- modo: se aplica siempre de forma explicita, tanto al arrancar como si ya estaba en marcha
+    !modeok = TRUE
+    !!nexusHost.SetWritable(!writable)
+    handle any
+        !modeok = FALSE
+    endhandle
+
+    if !modeok then
+        if !writable then
+            !!nexusmsg('Nexus activo en http://localhost:' & !port & '/  con ESCRITURA permitida. Claude puede modificar el modelo, solo en las bases autorizadas en el MCP.', FALSE)
+        else
+            !!nexusmsg('Nexus activo en http://localhost:' & !port & '/  en SOLO LECTURA.', FALSE)
+        endif
+    else
+        if !writable then
+            !!nexusmsg('Nexus esta activo pero esta version de la DLL no permite cambiar el modo en caliente: sigue en SOLO LECTURA. Cierra E3D y vuelve a abrirlo con la DLL nueva (carpeta NexusMCP actualizada).', TRUE)
+        else
+            !!nexusmsg('Nexus activo en http://localhost:' & !port & '/ (modo segun el entorno de E3D, por defecto SOLO LECTURA).', FALSE)
+        endif
+    endif
+
+endfunction
