@@ -445,7 +445,20 @@ namespace AVEVA_Nexus.Integration
 
         public string GetOwnerRef(string dbref)
         {
-            return AvevaGate.Run(() => RefOf(RequireElement(dbref).Owner));
+            return AvevaGate.Run(() =>
+            {
+                DbElement element = RequireElement(dbref);
+                // WORLD has no owner: Owner is null or invalid, and reading REF of it throws (was a 500).
+                try
+                {
+                    DbElement owner = element.Owner;
+                    return owner == null || !owner.IsValid ? null : RefOf(owner);
+                }
+                catch (Exception)
+                {
+                    return null;
+                }
+            });
         }
 
         public string[] GetAttributeNames(string type)
