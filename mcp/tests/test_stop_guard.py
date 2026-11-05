@@ -14,12 +14,12 @@ def fake_log(monkeypatch, log):
 
 
 def test_no_claims_means_nothing_pending(monkeypatch):
-    fake_log(monkeypatch, "@@claims\nnone")
+    fake_log(monkeypatch, "NXMARKclaims\nnone")
     assert guard.claims_pending() == []
 
 
 def test_claimed_elements_are_listed(monkeypatch):
-    fake_log(monkeypatch, "@@claims\n/MCP-TEST-ZONE\n/MCP-TEST-EQUI")
+    fake_log(monkeypatch, "NXMARKclaims\n/MCP-TEST-ZONE\n/MCP-TEST-EQUI")
     assert guard.claims_pending() == ["/MCP-TEST-ZONE", "/MCP-TEST-EQUI"]
 
 
@@ -79,7 +79,7 @@ def test_claims_are_asked_on_that_projects_url(monkeypatch):
 
     def fake(script, variables):
         urls.append(nexus_client.base_url())
-        return {"Log": "@@claims\nnone"}
+        return {"Log": "NXMARKclaims\nnone"}
 
     monkeypatch.setattr(guard.pml_dev, "run_with_log", fake)
     monkeypatch.setattr(nexus_client, "NEXUS_URL", "http://localhost:5001")

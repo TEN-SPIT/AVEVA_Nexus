@@ -34,7 +34,7 @@ def world(tmp_path, monkeypatch):
         else:
             log = []
             for line in script.splitlines():
-                if line.startswith("$P @@"):
+                if line.startswith("$P NXMARK"):
                     log.append(line[3:].strip())
                 if line.startswith("Q DBNAME OF "):
                     log.append(f"Dbname {ALLOWED}")

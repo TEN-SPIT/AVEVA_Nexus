@@ -66,11 +66,12 @@ def _databases_of(tokens: list[str]) -> dict[str, str]:
         return {}
     lines = []
     for index, token in enumerate(tokens):
-        lines += [f"$P @@{index}", f"Q DBNAME OF {token}"]
+        lines += [f"$P NXMARK{index}", f"Q DBNAME OF {token}"]
     log = pml_dev.run_with_log("\n".join(lines), None)["Log"]
     found, current, seen = {}, None, set()
     for line in log.splitlines():
-        marker = re.match(r"^@@(\d+)$", line.strip())
+        # Markers carry no '@': in graphical E3D `$P @@0` prints just "@" (seen live, 2026-11-05).
+        marker = re.match(r"^NXMARK(\d+)$", line.strip())
         if marker:
             current = int(marker.group(1))
             seen.add(current)
@@ -132,7 +133,7 @@ def _guarded_writable_run(info: dict, script: str, variables: list[str] | None) 
     result = pml_dev.run_with_log(script, variables)
 
     # Leave the session parked on something safe.
-    where = pml_dev.run_with_log("$P @@ce\nQ DBNAME", None)["Log"]
+    where = pml_dev.run_with_log("$P NXMARKce\nQ DBNAME", None)["Log"]
     current_db = next((m.group(1) for line in where.splitlines() if (m := _DBNAME_LINE.match(line.strip()))), None)
     if current_db is None:
         pml_dev.run_with_log("CE /*", None)
@@ -155,7 +156,7 @@ def claims_pending(port: int | None = None) -> list[str] | None:
         return None   # remote Nexus: the port of a local project says nothing about which session this is
     try:
         with nexus_client.override_url(url):
-            log = pml_dev.run_with_log("$P @@claims\nQ CLAIMLIST", None)["Log"]
+            log = pml_dev.run_with_log("$P NXMARKclaims\nQ CLAIMLIST", None)["Log"]
     except nexus_client.NexusError as error:
         # Only "nothing is running" or "read-only" (nothing can be claimed) mean no claims; a timeout,
         # a 500 or a lost connection mean we do not know.
@@ -163,9 +164,9 @@ def claims_pending(port: int | None = None) -> list[str] | None:
     except ToolError:
         return None
     lines = [line.strip() for line in log.splitlines() if line.strip()]
-    if "@@claims" not in lines:
+    if "NXMARKclaims" not in lines:
         return None
-    after = lines[lines.index("@@claims") + 1:]
+    after = lines[lines.index("NXMARKclaims") + 1:]
     return [] if not after or after[0].lower() == "none" else after
 
 

@@ -29,7 +29,7 @@ def world(tmp_path, monkeypatch):
         state["runs"].append(script)
         log = []
         for line in script.splitlines():
-            if line.startswith("$P @@"):
+            if line.startswith("$P NXMARK"):
                 log.append(line[3:].strip())
             if line.startswith("Q DBNAME OF "):
                 db = state["dbs"].get(line[len("Q DBNAME OF "):])
