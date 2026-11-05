@@ -19,9 +19,7 @@ $mcp = Join-Path (Split-Path -Parent $PSScriptRoot) 'mcp'
 Push-Location $mcp
 try {
     if ($Forget) { uv run python credstore.py delete $Project $User; return }
-    $secure = Read-Host "E3D password for $User on project $Project" -AsSecureString
-    $plain = [Runtime.InteropServices.Marshal]::PtrToStringBSTR([Runtime.InteropServices.Marshal]::SecureStringToBSTR($secure))
-    if (-not $plain) { throw 'Empty password: nothing stored.' }
-    $plain | uv run python credstore.py set $Project $User
-    $plain = $null
+    # Same topmost login dialog as start_e3d (a console prompt failed when the window lost focus or closed).
+    # The password goes from the dialog to the Credential Manager inside one Python process.
+    uv run python -c "import sys, e3d_launcher as l, credstore as c; u, p, _ = l._ask_credentials(sys.argv[1], sys.argv[2]); c.write(sys.argv[1], u, p); print('stored ' + c.target(sys.argv[1], u))" $Project $User
 } finally { Pop-Location }
