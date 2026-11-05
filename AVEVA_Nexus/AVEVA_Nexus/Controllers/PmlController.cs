@@ -25,9 +25,7 @@ namespace AVEVA_Nexus.Controllers
         {
             ReadOnlyMode.EnsureWritable();
 
-            RunRequest request = string.IsNullOrWhiteSpace(json)
-                ? null
-                : JsonConvert.DeserializeObject<RunRequest>(json);
+            RunRequest request = Http.JsonBody.Parse<RunRequest>(json);
 
             // Success stays true even when some lines failed: the errors are part of the result.
             return new ApiResponse { Success = true, Data = _service.Run(request) };
@@ -38,7 +36,7 @@ namespace AVEVA_Nexus.Controllers
         {
             ReadOnlyMode.EnsureWritable();
 
-            ExecuteRequest request = string.IsNullOrWhiteSpace(json) ? null : JsonConvert.DeserializeObject<ExecuteRequest>(json);
+            ExecuteRequest request = Http.JsonBody.Parse<ExecuteRequest>(json);
 
             if (request == null || string.IsNullOrWhiteSpace(request.Command))
             {

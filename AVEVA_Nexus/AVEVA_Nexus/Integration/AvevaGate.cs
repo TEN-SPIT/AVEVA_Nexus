@@ -36,6 +36,20 @@ namespace AVEVA_Nexus.Integration
             return variableValue != "0";
         }
 
+        // Which context (if any) HostConfig.Start() should capture, given NEXUS_UI_DISPATCH and the
+        // SynchronizationContext of the thread PML called it on:
+        //  "0"                       -> null (direct), always.
+        //  "1" / unset / "auto" / *  -> the current context if it is a real message-loop context (a subclass,
+        //                               e.g. WindowsFormsSynchronizationContext in graphical E3D), else null.
+        // The base SynchronizationContext is never captured, even with "1": its Post runs work on a thread-pool
+        // thread, not on an interface thread, so a nested gate call from that work would deadlock on Lock.
+        // A headless/TTY session has no context (or that base one): it stays direct.
+        public static SynchronizationContext SelectUiContext(string variableValue, SynchronizationContext current)
+        {
+            if ((variableValue ?? "").Trim() == "0" || current == null) return null;
+            return current.GetType() == typeof(SynchronizationContext) ? null : current;
+        }
+
         // Called from the interface thread (HostConfig.Start). Null leaves the gate in direct mode.
         public static void CaptureUiContext(SynchronizationContext context)
         {

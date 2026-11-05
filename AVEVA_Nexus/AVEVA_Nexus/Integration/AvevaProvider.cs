@@ -83,7 +83,9 @@ namespace AVEVA_Nexus.Integration
                 }
                 catch (Exception ex)
                 {
-                    throw new NexusException(ex.Message + "\n" + ex.StackTrace);
+                    // the stack trace goes to the log only, never into the response
+                    Logging.NexusLogger.Error(ex);
+                    throw new NexusException(ex.Message);
                 }
             });
         }
@@ -137,19 +139,126 @@ namespace AVEVA_Nexus.Integration
             });
         }
 
-        // GetElementType("FOO") with an unknown name crashes the E3D session, so every type is checked against
-        // the list of real types first (cached; 1884 types on E3D 3.1).
-        private static HashSet<string> _typeNames;
+        // GetElementType("FOO") with an unknown name crashes the E3D session, so every type is mapped through the
+        // list of real types first (cached; 1884 types on E3D 3.1). Clients may give the full name (EQUIPMENT) or
+        // the short name (EQUI); the result is always the full name, or null if unknown. Called inside the gate.
+        private static Query.TypeNameMap _typeMap;
 
-        private static bool IsKnownType(string type)
+        private static string CanonicalType(string type)
         {
-            if (_typeNames == null)
+            if (_typeMap == null)
             {
-                _typeNames = new HashSet<string>(
-                    DbElementType.GetAllElementTypes().Select(t => t.Name),
-                    StringComparer.OrdinalIgnoreCase);
+                _typeMap = new Query.TypeNameMap(DbElementType.GetAllElementTypes()
+                    .Select(t => new KeyValuePair<string, string>(t.Name, ShortNameOf(t)))
+                    .ToList());
             }
-            return _typeNames.Contains(type);
+            return _typeMap.Canonical(type);
+        }
+
+        // NEEDS LIVE VERIFICATION: DbElementType.ShortName (not used elsewhere yet). Any failure -> no short name.
+        private static string ShortNameOf(DbElementType type)
+        {
+            try { return type.ShortName; }
+            catch (Exception) { return null; }
+        }
+
+        private static string RequireType(string type)
+        {
+            string canonical = CanonicalType(type);
+            if (canonical == null)
+            {
+                throw new NexusException("Unknown element type '" + type + "'", 400);
+            }
+            return canonical;
+        }
+
+        // A validated reference (dbref "=123/45" or name "/NAME", see PmlInputValidator.ElementRef) to a valid
+        // element, or null. Names go through the database API (MDB.FindElement), never into PML, so names with
+        // quotes work. Called inside the gate.
+        private static DbElement FindByRef(string reference)
+        {
+            if (string.IsNullOrEmpty(reference)) return null;
+            try
+            {
+                DbElement element = reference.StartsWith("=")
+                    ? DbElement.GetElement(reference)
+                    : MDB.CurrentMDB.FindElement(reference);
+                if ((element == null || !element.IsValid) && reference.StartsWith("/") && reference.Length > 1)
+                {
+                    // NEEDS LIVE VERIFICATION: in case FindElement expects the name without its leading '/'
+                    element = MDB.CurrentMDB.FindElement(reference.Substring(1));
+                }
+                return element != null && element.IsValid ? element : null;
+            }
+            catch (Exception)
+            {
+                return null;
+            }
+        }
+
+        private static string TypeOf(DbElement element)
+        {
+            try { return element.GetElementType().Name; }
+            catch (Exception) { return null; }
+        }
+
+        private static string NameOf(DbElement element)
+        {
+            try { return element.GetAsString(DbAttribute.GetDbAttribute("NAME")); }
+            catch (Exception) { return null; }
+        }
+
+        public string ResolveRef(string reference)
+        {
+            return AvevaGate.Run(() =>
+            {
+                DbElement element = FindByRef(reference);
+                return element == null ? null : RefOf(element);
+            });
+        }
+
+        public ResolvedElement[] Resolve(IList<string> references)
+        {
+            return AvevaGate.Run(() => references.Select(reference =>
+            {
+                DbElement element = FindByRef(reference);
+                return new ResolvedElement
+                {
+                    Name = reference,
+                    Dbref = element == null ? null : RefOf(element),
+                    Type = element == null ? null : TypeOf(element)
+                };
+            }).ToArray());
+        }
+
+        // The whole walk runs in ONE gate call (one hop to the interface thread in graphical sessions).
+        public TreeResult GetTree(string dbref, int depth, string type, int limit)
+        {
+            return AvevaGate.Run(() =>
+            {
+                DbElement root = RequireElement(dbref);
+                string wanted = type == null ? null : RequireType(type);
+
+                var result = new TreeResult
+                {
+                    Root = new TreeNode { Dbref = RefOf(root), Type = TypeOf(root), Name = NameOf(root) }
+                };
+                result.Truncated = Query.TreeWalk.Walk<DbElement>(
+                    root,
+                    element => element.Members(),
+                    element => wanted == null || string.Equals(TypeOf(element), wanted, StringComparison.OrdinalIgnoreCase),
+                    depth,
+                    limit,
+                    (element, owner, level) => result.Items.Add(new TreeItem
+                    {
+                        Dbref = RefOf(element),
+                        Type = TypeOf(element),
+                        Name = NameOf(element),
+                        Depth = level,
+                        Owner = RefOf(owner)
+                    }));
+                return result;
+            });
         }
 
         // A scope is a dbref ("=123/45") or a name ("/SITE-NAME"). Called inside the gate.
@@ -172,10 +281,7 @@ namespace AVEVA_Nexus.Integration
         {
             return AvevaGate.Run(() =>
             {
-                if (!IsKnownType(type))
-                {
-                    throw new NexusException("Unknown element type '" + type + "'", 400);
-                }
+                type = RequireType(type);
 
                 // PML answers an unknown scope with an empty result, which callers read as "nothing here".
                 if (scope != null && !ScopeExists(scope))
@@ -322,10 +428,7 @@ namespace AVEVA_Nexus.Integration
             return AvevaGate.Run(() =>
             {
                 DbElement element = RequireElement(dbref);
-                if (type != null && !IsKnownType(type))
-                {
-                    throw new NexusException("Unknown element type '" + type + "'", 400);
-                }
+                if (type != null) type = RequireType(type);
 
                 var refs = new List<string>();
                 foreach (DbElement member in element.Members())
@@ -349,12 +452,7 @@ namespace AVEVA_Nexus.Integration
         {
             return AvevaGate.Run(() =>
             {
-                if (!IsKnownType(type))
-                {
-                    throw new NexusException("Unknown element type '" + type + "'", 400);
-                }
-
-                DbElementType elementType = DbElementType.GetElementType(type);
+                DbElementType elementType = DbElementType.GetElementType(RequireType(type));
                 return elementType.SystemAttributes()
                     .Concat(elementType.GetAllUdas())
                     .Select(a => a.Name)
@@ -406,7 +504,8 @@ namespace AVEVA_Nexus.Integration
             }
             catch (Exception ex)
             {
-                throw new NexusException(ex.Message + "\n" + ex.StackTrace);
+                Logging.NexusLogger.Error(ex);
+                throw new NexusException(ex.Message);
             }
         }
 

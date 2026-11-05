@@ -93,6 +93,13 @@
     <Compile Include="Http\RouteContext.cs" />
     <Compile Include="Http\CorsPolicy.cs" />
     <Compile Include="Http\Router.cs" />
+    <Compile Include="Http\BatchRunner.cs" />
+    <Compile Include="Http\JsonBody.cs" />
+    <Compile Include="Models\BatchModels.cs" />
+    <Compile Include="Models\ElementModels.cs" />
+    <Compile Include="Query\TreeWalk.cs" />
+    <Compile Include="Query\TypeNameMap.cs" />
+    <Compile Include="Validation\ElementRefs.cs" />
     <Compile Include="Config\HostConfig.cs" />
     <Compile Include="Config\ReadOnlyMode.cs" />
     <Compile Include="Controllers\SessionController.cs" />

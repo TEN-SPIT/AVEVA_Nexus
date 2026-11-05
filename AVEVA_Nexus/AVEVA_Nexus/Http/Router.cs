@@ -105,6 +105,13 @@ namespace AVEVA_Nexus.Http
             Trace.Line($"Root Segment = {segments[0]}");
             Trace.Line($"Module       = {segments[1]}");
 
+            if (segments[1].Equals("Batch", StringComparison.OrdinalIgnoreCase))
+            {
+                RequireMethod(context, "POST");
+                // Sub-requests go through Route again (same read-only rules); BatchRunner refuses nested batches.
+                return new ApiResponse { Success = true, Data = BatchRunner.Run(context.Body, Route) };
+            }
+
             if (segments[1].Equals(
                 "PML",
                 StringComparison.OrdinalIgnoreCase))
@@ -223,7 +230,21 @@ namespace AVEVA_Nexus.Http
                 segments[2].Equals("Children", StringComparison.OrdinalIgnoreCase))
             {
                 RequireMethod(context, "GET");
-                return _element.Children(context.Query["dbref"], context.Query["type"]);
+                return _element.Children(context.Query["dbref"], context.Query["type"], context.Query["limit"]);
+            }
+
+            if (segments.Length >= 3 &&
+                segments[2].Equals("Resolve", StringComparison.OrdinalIgnoreCase))
+            {
+                RequireMethod(context, "POST");
+                return _element.Resolve(context.Body);
+            }
+
+            if (segments.Length >= 3 &&
+                segments[2].Equals("Tree", StringComparison.OrdinalIgnoreCase))
+            {
+                RequireMethod(context, "GET");
+                return _element.Tree(context.Query["dbref"], context.Query["depth"], context.Query["type"], context.Query["limit"]);
             }
 
             if (segments.Length >= 3 &&

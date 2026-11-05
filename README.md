@@ -398,7 +398,9 @@ POST /api/Element/Query
 }
 ```
 
-`type` is required. `scope` is a dbref or a name starting with `/` (optional; 404 if it does not exist). `where` is
+`type` is required: the full type name (`EQUIPMENT`) or its short name (`EQUI`), mapped through E3D's list of
+types. `scope` is a dbref or a name starting with `/` (optional; resolved through the database API like
+`Element/Resolve`, so names with quotes work; 404 if it does not exist). `where` is
 a PML condition (optional). It is checked, not trusted: the text inside `'...'` and `|...|` strings is treated as
 data, and outside strings `;`, line breaks, `$`, `!` (PML variables), method calls and words such as `SAVEWORK`,
 `DELETE`, `NEW`, `OBJECT` are rejected, as are unbalanced parentheses and unterminated strings. This is a
@@ -420,15 +422,77 @@ POST /api/Element/Get
 { "refs": ["=123/46", "=123/47"], "attributes": ["NAME", "TYPE"] }
 ```
 
-Same table shape, rows in the order of `refs` (max 1000). A dbref that does not exist gives 404.
+Same table shape, rows in the order of `refs` (max 1000). Each ref is a dbref or a name (`/PIPE-1`); the `dbref`
+column is always the resolved dbref. A ref that does not exist gives 404.
+
+### Resolve names to dbrefs
+
+```http
+POST /api/Element/Resolve
+```
+
+```json
+{ "names": ["/PIPE-1", "/14\"-P-1", "=123/46", "/MISSING"] }
+```
+
+`Data` is one entry per input, in order: `{ "Name", "Dbref", "Type" }`. `Dbref` and `Type` are `null` when nothing
+matches (no 404); `Name` echoes the input. Names are looked up through the E3D database API (never placed into PML),
+so names with quotes or other symbols work. Dbrefs are accepted too and normalised (`123/46` and `=0123/046` become
+`=123/46`). Max 1000 names.
+
+**Element references everywhere:** wherever an element is expected (`Element/Get` refs, `Children` and `Tree`
+`dbref`, `Query` `scope`, `Attribute` `dbref`) a name starting with `/` is accepted as well as a dbref, resolved the
+same way.
 
 ### Children of an element
 
 ```http
-GET /api/Element/Children?dbref==123/1&type=ZONE
+GET /api/Element/Children?dbref==123/1&type=ZONE&limit=1000
 ```
 
-`type` is optional. `Data`: `{ "Owner": "=...", "Children": [ { "dbref", "type", "name" } ] }`.
+`type` (full or short name) and `limit` (default 1000, 1..5000, otherwise 400) are optional.
+`Data`: `{ "Owner": "=...", "Children": [ { "dbref", "type", "name" } ], "Truncated": false }`; `Truncated` is
+true when there are more children than `limit`.
+
+### Element tree
+
+```http
+GET /api/Element/Tree?dbref=/SITE-1&depth=2&type=EQUI&limit=2000
+```
+
+Depth-first listing below an element in one call. `depth` 1..10 (default 2), `limit` 1..5000 (default 2000);
+out-of-range values give 400. `type` (optional, full or short name) filters which items are listed; the walk still
+goes through elements of other types (e.g. `type=EQUI` below a SITE lists equipment inside its zones).
+
+```json
+{ "Root": { "Dbref": "=123/1", "Type": "SITE", "Name": "/SITE-1" },
+  "Items": [ { "Dbref": "=123/2", "Type": "ZONE", "Name": "/ZONE-A", "Depth": 1, "Owner": "=123/1" } ],
+  "Truncated": false }
+```
+
+### Batch
+
+```http
+POST /api/Batch
+```
+
+```json
+{ "requests": [
+    { "method": "GET",  "path": "/api/Element/Children", "query": { "dbref": "/SITE-1" } },
+    { "method": "POST", "path": "/api/Element/Get", "body": { "refs": ["/PIPE-1"], "attributes": ["BORE"] } } ] }
+```
+
+Runs up to 50 sub-requests in order through the same router, with the same read-only rules (a `PML/Run` inside a
+batch still gets 403 in read-only mode). `method` is `GET` (default) or `POST`; `path` must start with `/api/` and
+may carry a query string; `query` values and `body` are optional. `Data` is one `{ "Status", "Data", "Error" }` per
+sub-request, in order; a failing sub-request does not fail the batch (the batch answers 200). More than 50 requests,
+no requests, or a nested `/api/Batch` give 400 for the whole batch before anything runs. Use it to save HTTP
+round-trips.
+
+### Errors
+
+A request body that is not valid JSON (or does not fit the expected shape) gives 400 `Malformed JSON body: ...`.
+Error messages never contain stack traces (they are only written to the debug log).
 
 ### Attribute names of a type
 
@@ -597,6 +661,8 @@ Read from the environment of the E3D process.
 |---|---|
 | `NEXUS_READONLY` | Read-only is **on unless this is exactly `0`**. In read-only mode `PML/Execute` and `PML/Run` answer 403; queries and variable reads keep working. |
 | `NEXUS_TOKEN` | If set, every request except `GET /api/Health` must send it in the `X-Nexus-Token` header, and browser clients are allowed (CORS `*`). Required when the listener is not on `localhost`. If **not** set, any request that carries an `Origin` header (a web page in a browser) is refused with 403 and no CORS headers are sent, so other web pages cannot read the model through your browser. The token travels in clear over plain HTTP. |
+| `NEXUS_UI_DISPATCH` | Where E3D work runs. Unset/`auto` (default) and `1`: on E3D's interface thread when `HostConfig.Start()` is called from a thread with a real message-loop `SynchronizationContext` (graphical session); otherwise (headless/TTY: no context, or the base one) directly on the request thread under the lock. `0`: always direct. `HostConfig.DispatchMode()` reports the result (`ui-thread` / `direct`). |
+| `NEXUS_DEBUG` | `1` writes a per-request trace to the console. Lines are queued and written by a background thread (dropped if the queue fills), so a frozen console (QuickEdit "Select" mode) never blocks a request. |
 | `NEXUS_PORT` | If set, the addin starts the HTTP server by itself on `http://+:<port>/` when it loads (no macro needed). Not covered by the tests yet; the supported way to start a session is still the launcher/macro. |
 
 All calls into E3D are serialised through one lock: simultaneous requests used to crash the E3D session.

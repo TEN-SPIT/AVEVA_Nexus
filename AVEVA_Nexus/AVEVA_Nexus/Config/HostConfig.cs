@@ -35,8 +35,11 @@ namespace AVEVA_Nexus.Config
             // ON by default when a context exists: in a graphical E3D, running model writes from a background
             // thread hung every later PML call (verified with the user: same NEW BOX gave a 500 and a permanent
             // hang in "direct" mode and worked in "ui-thread" mode). NEXUS_UI_DISPATCH=0 turns it off.
-            bool ui = AvevaGate.UiDispatchEnabled(Environment.GetEnvironmentVariable("NEXUS_UI_DISPATCH"));
-            AvevaGate.CaptureUiContext(ui ? System.Threading.SynchronizationContext.Current : null);
+            // NEXUS_UI_DISPATCH: "0" off; unset/"auto"/"1" = on whenever this thread has a real message-loop
+            // context (graphical session), direct otherwise; see AvevaGate.SelectUiContext.
+            AvevaGate.CaptureUiContext(AvevaGate.SelectUiContext(
+                Environment.GetEnvironmentVariable("NEXUS_UI_DISPATCH"),
+                System.Threading.SynchronizationContext.Current));
             Console.WriteLine("Nexus dispatch mode: " + AvevaGate.Mode);
             _host.Start();
         }
