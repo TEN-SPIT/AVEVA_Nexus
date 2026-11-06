@@ -109,6 +109,37 @@ by name and reloads it automatically when saved again; a **new** file needs `PML
 because it rewrites the `pml.index` of every PMLLIB folder, shared server folders included).
 Forms cannot be loaded in a headless session (`GRAPHICS OFF`), so keep logic in functions or objects.
 
+## Model data-quality audit
+A read-only rule engine (`model_audit.py`, tools in `audit_tools.py`) that checks a site, zone or the
+whole database for typical modelling defects and returns them as findings
+`{rule, severity, dbref, name, type, message, value}` with counts per rule and severity.
+
+| Tool | What it does |
+|---|---|
+| `audit_rules` | List the rules: id, title (English/Spanish), severity, kind, types, params, default on/off |
+| `audit_model` | Run the rules on a `scope` (dbref or name); paged findings (`max_findings`, `offset`). The result is kept 5 minutes so paging does not query E3D again (`refresh=true` re-runs) |
+| `audit_export` | Same audit, all findings to a CSV (UTF-8 with BOM, opens in Excel) at `path` or `%LOCALAPPDATA%\NexusMCP\audits\`. Only writes that local file; the model is never changed |
+
+Rules are JSON files in `rules/` (the generic pack is `rules/piping_equipment.json`); put project
+conventions in your own file or folder and point `NEXUS_AUDIT_RULES` at it (same id overrides a
+built-in rule). A rule: `id`, `title {en, es}`, `severity` (`error`/`warning`/`info`), `kind`,
+`types`, `params`, optional `where` (PML condition sent to Query) and `default: false` (opt-in).
+
+| Kind | Params | Finding when |
+|---|---|---|
+| `required` | `attributes` | an attribute is null, `unset` or empty |
+| `reference` | `attributes`, `skip_when {ATTR: [values]}` | a reference is null (`=0/0`, `Nulref`, `unset`) |
+| `pattern` | `attribute`, `regex` | the value does not fully match (unset values are skipped) |
+| `unique` | `attribute`, `case_sensitive` | several elements in scope share a value |
+| `range` | `attribute`, `min`, `max` | the leading number (units such as `mm` ignored) is out of bounds |
+| `children` | `child_types` (optional) | the element has no child (of those types) |
+
+Cost: one paged `Element/Query` per rule and type with only the needed attributes; all first pages
+(and the attribute lists used to validate attribute names) go out in `/api/Batch` calls of 50.
+`children` with `child_types` uses one query of the child type reading `OWNER`; without it, one
+batched `Children` call per 50 parents. Each rule reads at most `max_elements` (20 000) per type and
+is then flagged `truncated`. An attribute a type does not have skips that check with a warning.
+
 ## Environment variables
 | Variable | Default | Meaning |
 |---|---|---|
@@ -117,6 +148,7 @@ Forms cannot be loaded in a headless session (`GRAPHICS OFF`), so keep logic in 
 | `NEXUS_LOCAL_DIR` | `AVEVA_Nexus_local` next to the repository clone | Folder with the start/stop scripts and `config\projects.json` |
 | `NEXUS_WRITABLE_PROJECTS` | empty | Comma-separated project keys for which `start_e3d(writable=true)` is allowed |
 | `NEXUS_PML_SANDBOX` | `C:\Temp\PMLRepos\_mcp_sandbox` | Where `save_pml` writes |
+| `NEXUS_AUDIT_RULES` | empty | Extra audit rule pack: a JSON file or a folder of them |
 | `NEXUS_AUDIT_LOG` | `%LOCALAPPDATA%\NexusMCP\audit.jsonl` | Append-only audit trail (see Security model) |
 
 ## Security model
