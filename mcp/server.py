@@ -496,6 +496,12 @@ def stop_e3d(project: str, force: bool = False) -> dict:
         return e3d_launcher.stop(project)
 
 
+# Read-only model data-quality audit: audit_rules, audit_model, audit_export.
+import audit_tools  # noqa: E402
+
+audit_tools.register(mcp)
+
+
 def main() -> None:
     """Entry point (console script `nexus-mcp` and `python server.py`)."""
     audit.configure_logging()

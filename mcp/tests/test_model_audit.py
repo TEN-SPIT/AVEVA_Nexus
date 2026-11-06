@@ -201,7 +201,7 @@ def test_first_pages_go_through_one_batch(nexus):
     model_audit.run_audit("/SITE", ["PIPE-SPEC", "COMP-SPREF", "NOZZ-CATREF"])
     paths = [c[1] for c in nexus.calls]
     assert set(paths) == {"/api/Batch"}
-    assert len(paths) == 2          # one for the attribute lists, one for every first page
+    assert len(paths) == 1          # every first page in one batch (no AttributeList pre-check)
 
 
 def test_unknown_attribute_is_skipped_with_a_warning(nexus):
@@ -220,17 +220,18 @@ def test_unknown_attribute_is_skipped_with_a_warning(nexus):
     assert any("BOX has no attribute PSPEC" in w for w in result["warnings"])
 
 
-def test_without_attribute_list_null_cells_are_still_findings(nexus):
+def test_attribute_list_is_not_trusted_null_cells_still_count(nexus):
+    """E3D 3.1's AttributeList leaves out readable attributes (PSPEC, SPREF, CATREF), so it is not
+    consulted: an attribute with real values on some rows is checked, and its null rows are findings."""
     original = nexus.handle
 
     def handle(method, path, params, body):
         if path == "/api/Element/AttributeList":
-            raise NexusError("Nexus 500: boom", 500)
+            raise AssertionError("AttributeList must not be called")
         return original(method, path, params, body)
 
     nexus.handle = handle
     result = model_audit.run_audit("/SITE", ["PIPE-SPEC"])
-    assert any("unavailable" in w for w in result["warnings"])
     assert by_rule(result)["PIPE-SPEC"] == {"=2/2", "=3/2"}
 
 
@@ -331,3 +332,15 @@ def test_register_adds_three_tools_with_hints():
     hints = dict(registered)
     assert set(hints) == {"audit_rules", "audit_model", "audit_export"}
     assert hints["audit_model"].read_only_hint and not hints["audit_export"].destructive_hint
+
+
+def test_unnamed_elements_are_not_naming_findings(nexus):
+    """Query returns an unnamed element's dbref as NAME (seen live on E3D 3.1)."""
+    nexus.e["=8/1"] = {"TYPE": "EQUI", "OWNER": "=1/2", "NAME": "=8/1"}
+    result = model_audit.run_audit("/SITE", ["NAME-CONVENTION"])
+    assert "=8/1" not in by_rule(result).get("NAME-CONVENTION", set())
+
+
+def test_pipe_bore_range_is_opt_in():
+    rules = model_audit.load_rules()
+    assert rules["PIPE-BORE-RANGE"].get("default") is False

@@ -216,9 +216,14 @@ def _run_tasks(tasks: list[_Task]) -> None:
 
 # --- evaluation ----------------------------------------------------------------------------
 
+def _is_dbref(value) -> bool:
+    """An unnamed element's NAME comes back as its dbref ("=123/45", seen live on E3D 3.1)."""
+    return isinstance(value, str) and value.strip().startswith("=")
+
+
 def _finding(rule, type_, row, message, value=None):
     return {"rule": rule["id"], "severity": rule["severity"], "dbref": row.get("dbref"),
-            "name": None if is_unset(row.get("NAME")) else row.get("NAME"), "type": type_,
+            "name": None if is_unset(row.get("NAME")) or _is_dbref(row.get("NAME")) else row.get("NAME"), "type": type_,
             "message": message, "value": value}
 
 
@@ -237,6 +242,8 @@ def _check_rows(rule, type_, rows, attrs) -> list[dict]:
         a, rx = attrs[0], re.compile(p["regex"])
         for row in rows:
             v = row.get(a)
+            if a == "NAME" and _is_dbref(v):
+                continue   # unnamed element: no name to check
             if is_unset(v):
                 if not p.get("skip_unset", True):
                     out.append(_finding(rule, type_, row, f"{a} is not set", v))
@@ -317,22 +324,17 @@ def run_audit(scope: str | None, rule_ids: list[str] | None = None, max_elements
     max_elements = max(1, int(max_elements))
     selected = _select(load_rules(), rule_ids)
     warnings: list[str] = []
-    types = sorted({ops.canonical_type(t) for r in selected for t in r["types"]})
-    valid = _attribute_lists(types, warnings)
-
+    # Attribute names are NOT pre-checked with Element/AttributeList: on E3D 3.1 it leaves out real,
+    # readable attributes (seen live: PSPEC on PIPE/BRAN, SPREF on components, CATREF on NOZZ). Query
+    # answers null for an attribute the type does not have (and 'unset'/'Nulref' for one that is not
+    # set), so an attribute that is null on every row is reported as unknown after the query instead.
     plan = []   # (rule, type, checked attributes, task)
     for rule in selected:
         needed = _rule_attributes(rule)
         check_attrs = [a for a in needed if a not in {k.upper() for k in (rule["params"].get("skip_when") or {})}]
         for t in (ops.canonical_type(x) for x in rule["types"]):
-            known = valid.get(t)
             attrs = needed
-            if known is not None:
-                missing = [a for a in needed if a not in known and a != "NAME"]
-                if missing:
-                    warnings.append(f"{rule['id']}: {t} has no attribute {', '.join(missing)}; skipped.")
-                    attrs = [a for a in needed if a not in missing]
-            checked = [a for a in check_attrs if a in attrs]
+            checked = list(check_attrs)
             if rule["kind"] != "children" and not checked:
                 continue
             plan.append((rule, t, checked, _Task((rule["id"], t), t, scope, rule.get("where"), attrs, max_elements)))
@@ -348,6 +350,12 @@ def run_audit(scope: str | None, rule_ids: list[str] | None = None, max_elements
             warnings.append(f"{rule['id']}: query of {t} failed ({task.error}).")
             continue
         stats["ran"] = True
+        unknown = [a for a in checked if task.rows and all(r.get(a) is None for r in task.rows)]
+        if unknown:
+            warnings.append(f"{rule['id']}: {t} has no attribute {', '.join(unknown)} (null on every element); skipped.")
+            checked = [a for a in checked if a not in unknown]
+            if rule["kind"] not in ("children", "unique") and not checked:
+                continue
         stats["checked"] += len(task.rows)
         stats["truncated"] |= task.truncated
         if task.truncated:
