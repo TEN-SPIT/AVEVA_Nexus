@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Text;
 using System.Text.RegularExpressions;
 
 namespace AVEVA_Nexus.Scripts
@@ -28,6 +29,20 @@ namespace AVEVA_Nexus.Scripts
             @"^(if|elseif|else|endif|do|enddo|break|skip|return|handle|elsehandle|endhandle)\b", RegexOptions.IgnoreCase);
         static readonly Regex HandleOpen = new Regex(@"^(handle|elsehandle)\b", RegexOptions.IgnoreCase);
         static readonly Regex HandleClose = new Regex(@"^endhandle\b", RegexOptions.IgnoreCase);
+
+        // Contents of the temporary macro that runs the wrapped lines: UTF-8 WITH a BOM. Without the BOM E3D 3.1
+        // reads the file byte by byte as Latin-1, so "|N-tilde|" (U+00D1) became the two characters U+00C3 U+0091
+        // (seen live: a 9-character accented string had length() 16). With the BOM it decodes UTF-8 correctly.
+        public static byte[] MacroBytes(IList<string> lines)
+        {
+            var encoding = new UTF8Encoding(true);
+            byte[] preamble = encoding.GetPreamble();
+            byte[] body = encoding.GetBytes(string.Join("\r\n", Wrap(lines)));
+            var bytes = new byte[preamble.Length + body.Length];
+            preamble.CopyTo(bytes, 0);
+            body.CopyTo(bytes, preamble.Length);
+            return bytes;
+        }
 
         public static List<string> Wrap(IList<string> lines)
         {

@@ -28,8 +28,7 @@ namespace AVEVA_Nexus.Integration
                 System.IO.Path.GetTempPath(), "nexus-" + Guid.NewGuid().ToString("N") + ".pmlmac");
             try
             {
-                System.IO.File.WriteAllText(
-                    path, string.Join("\r\n", Scripts.PmlGuard.Wrap(lines)), new System.Text.UTF8Encoding(false));
+                System.IO.File.WriteAllBytes(path, Scripts.PmlGuard.MacroBytes(lines));
                 bool ran = ac.Command.CreateCommand("$M/" + path.Replace('\\', '/')).RunInPdms();
                 if (!ran)
                 {

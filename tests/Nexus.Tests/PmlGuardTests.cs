@@ -23,6 +23,18 @@ namespace Nexus.Tests
 
         public static void RunAll()
         {
+            Program.Run("Macro_file_is_utf8_with_bom_so_E3D_keeps_non_ascii_text", () =>
+            {
+                const string line = "!!x = |Ñáé ç|";
+                byte[] b = PmlGuard.MacroBytes(new[] { line });
+                Check.Equal(0xEF, (int)b[0], "bom 1");
+                Check.Equal(0xBB, (int)b[1], "bom 2");
+                Check.Equal(0xBF, (int)b[2], "bom 3");
+                string text = new System.Text.UTF8Encoding(false).GetString(b, 3, b.Length - 3);
+                Check.Equal(string.Join("\r\n", Wrap(line)), text, "body");
+                Check.True(text.Contains(line), "non-ascii kept");
+            });
+
             Program.Run("Guard_starts_by_resetting_the_failure_flag_and_message", () =>
             {
                 var w = Wrap("!!x = 1");
