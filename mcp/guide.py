@@ -16,8 +16,8 @@ PML_GUIDE = """\
   (`$P` and `Q` output).
 - Variables you want back must be GLOBAL (`!!x`) and named in `variables` without the `!!`.
   Local `!x` variables do not survive between lines/units. A missing variable comes back null.
-- Do not use `_` in variable names (house rule for this server; unverified as an E3D limitation).
-- On a graphical E3D do not put `@` in `$P` markers (house rule; unverified).
+- Do not use `_` in variable names: `!!r_root` is read as `!!r` (verified on E3D 3.1).
+- On a graphical E3D do not put `@` in `$P` text: `$P @@0` prints just `@` (verified on E3D 3.1).
 - Blocked while Nexus is read-only (the default): check `session_info`, then `start_e3d` with
   `writable=true` only on a test project and only if the user allows it.
 - `define function/method/object/form` cannot be typed in run_pml: write them with `save_pml`
@@ -37,15 +37,23 @@ $P some text      -- print to Log
 ```
 Prefer the read tools (`query_elements`, `describe_element`, `element_tree`) over PML for reading.
 
-## Modelling snippets (unverified syntax details: confirm in your E3D, then check with `element_tree`)
+## Modelling snippets (used live on E3D 3.1; check the result with `element_tree`)
 ```
 NEW ZONE /MCP-ZONE
 NEW EQUI /MCP-EQUI
+POS E 5000 N 5000 U 0      -- position of the equipment
 NEW CYLI
+DIAM 1500
+HEIG 3000
+POS E 0 N 0 U 2500          -- primitives are positioned relative to their equipment
 NEW BOX
+XLEN 1800
+YLEN 700
+ZLEN 200
 NEW DISH
-POS E 1000 N 2000 U 0
-ORI Y is N and Z is U
+DIAM 1500
+HEIG 375
+ORI Z IS D                  -- e.g. a bottom head pointing down
 ADD /MCP-EQUI              -- add to the 3D view
 REMOVE /MCP-EQUI           -- remove from the 3D view
 ```
