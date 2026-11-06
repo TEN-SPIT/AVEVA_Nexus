@@ -17,6 +17,8 @@ import nexus_client
 import ops
 import pml_dev
 import write_guard
+import guide
+from models import CountResult, DescribeResult, QueryResult, TreeResult
 
 mcp = MCPServer("nexus")
 log = logging.getLogger("nexus-mcp")
@@ -39,6 +41,88 @@ def session_info() -> dict:
     return nexus_client.call("GET", "/api/Session/Info")
 
 
+# --- resources and prompts (read-only context for the client) ---------------------------------
+
+@mcp.resource("nexus://session", name="session", mime_type="application/json",
+              description="Active E3D session: project, MDB, user, module, version, read-only flag.")
+def session_resource() -> dict:
+    return nexus_client.call("GET", "/api/Session/Info")
+
+
+@mcp.resource("nexus://projects", name="projects", mime_type="application/json",
+              description="E3D projects this machine can start: project, mdb, module, port, auth, login source. Never credentials.")
+def projects_resource() -> dict:
+    return e3d_launcher.list_projects()
+
+
+@mcp.resource("nexus://attributes/{type}", name="attributes", mime_type="application/json",
+              description="Valid attributes of an E3D element type (cached per process).")
+def attributes_resource(type: str) -> dict:
+    canonical = ops.canonical_type(type)
+    return {"type": canonical, "attributes": ops._valid_attributes(canonical)}
+
+
+@mcp.resource("nexus://guide/pml", name="guide_pml", mime_type="text/markdown",
+              description="Concise PML cheat-sheet for run_pml on this server.")
+def guide_pml() -> str:
+    return guide.PML_GUIDE
+
+
+@mcp.resource("nexus://guide/safety", name="guide_safety", mime_type="text/markdown",
+              description="Write rules: read-only default, write_dbs, save_work, refused constructs.")
+def guide_safety() -> str:
+    return guide.SAFETY_GUIDE
+
+
+@mcp.prompt(description="Explore an E3D site step by step, read-only.")
+def explore_site(site: str) -> str:
+    return (
+        f"Explore the E3D site {site} using read-only tools only.\n"
+        "1. session_info to confirm the project and mode.\n"
+        f"2. describe_element on {site} for type, owner and children by type.\n"
+        f"3. element_tree on {site} with depth 2 to see zones and their main contents.\n"
+        "4. count_elements / query_elements (compact) for the types that matter.\n"
+        "Summarise what the site contains and suggest what to look at next. Do not write anything."
+    )
+
+
+@mcp.prompt(description="Test a PML function from the sandbox or PMLLIB.")
+def test_pml_function(name: str) -> str:
+    return (
+        f"Test the PML function {name}. First read the resources nexus://guide/pml and nexus://guide/safety.\n"
+        "1. session_info: running PML needs a writable session (do not start one without asking the user).\n"
+        f"2. list_pml to see whether {name} is in the sandbox; if it is new, run_pml 'PML REHASH' once "
+        "(never REHASH ALL).\n"
+        "3. call_pml_function with representative arguments, then edge cases. Check ok, errors and log each time.\n"
+        "4. If it fails, fix the source with save_pml and call it again. Report what you tested and the results."
+    )
+
+
+@mcp.prompt(description="Plan, apply and verify a model change, asking before saving.")
+def safe_edit(task: str) -> str:
+    return (
+        f"Task: {task}\n\n"
+        "Follow this flow and read nexus://guide/safety and nexus://guide/pml first.\n"
+        "1. Plan: say which elements change and in which database; check write_dbs allows it (e3d_projects, session_info).\n"
+        "2. Apply with run_pml, only inside allowed databases, in small steps. Check Ok and Errors every time.\n"
+        "3. Verify with element_tree and get_attributes that the result is what the plan said.\n"
+        "4. Show the user what changed and ask for confirmation. Only after a yes call save_work(db) for "
+        "each database, telling the user which one and why. Never SAVEWORK inside run_pml."
+    )
+
+
+@mcp.prompt(description="Read-only audit of a zone (generic placeholder).")
+def audit_zone(zone: str) -> str:
+    return (
+        f"Audit the zone {zone} read-only.\n"
+        f"1. describe_element on {zone}.\n"
+        "2. count_elements per relevant type with scope set to the zone dbref (resolve_names first if needed).\n"
+        "3. query_elements (compact) listing elements with NAME, DESC and key attributes; use attribute_list "
+        "to pick attribute names and page with next_offset.\n"
+        "4. Report anomalies: unnamed elements, unset attributes, unexpected types. Do not modify anything."
+    )
+
+
 def _without_none(**fields):
     """Drop unset optional fields so Nexus applies its own defaults."""
     return {k: v for k, v in fields.items() if v is not None}
@@ -53,8 +137,8 @@ def query_elements(
     limit: int | None = None,
     offset: int | None = None,
     name_like: str | None = None,
-    compact: bool = False,
-) -> dict:
+    compact: bool = True,
+) -> QueryResult:
     """Find E3D elements of one type and read some of their attributes in a single call.
 
     Use this for questions like "list the sites", "pipes with bore over 300 in this zone".
@@ -73,19 +157,22 @@ def query_elements(
       "PIPE-1*" (a leading "/" is added when the pattern does not start with * or /). Combined
       with `where` by AND.
     - limit: rows to return (default 100, max 1000). Use offset to page through more.
-    - compact: True returns {total, offset, columns, rows: [[...]]} instead of one object per
-      row; much fewer tokens for big results.
+    - compact: True (default) returns {total, offset, columns, rows: [[...]], next_offset} instead
+      of one object per row; far fewer tokens. False returns the Nexus shape {Total, Rows: [{...}]}
+      plus next_offset. next_offset is the offset for the next page, or null when no rows remain.
     """
     data = nexus_client.call(
         "POST",
         "/api/Element/Query",
         body=ops.build_query(type, scope, where, name_like, attributes=attributes, limit=limit, offset=offset),
     )
-    return ops.compact_table(data) if compact else data
+    if compact:
+        return ops.compact_table(data, offset)
+    return {**data, "next_offset": ops.next_offset(data, offset)}
 
 
 @mcp.tool(annotations=READ_ONLY)
-def count_elements(type: str, scope: str | None = None, where: str | None = None, name_like: str | None = None) -> dict:
+def count_elements(type: str, scope: str | None = None, where: str | None = None, name_like: str | None = None) -> CountResult:
     """Count elements of a type without listing them: returns {"total": n}.
 
     Cheaper than query_elements when you only need "how many". Arguments as in query_elements
@@ -126,7 +213,7 @@ def resolve_names(names: list[str]) -> list[dict | None]:
 
 
 @mcp.tool(annotations=READ_ONLY)
-def element_tree(ref: str, depth: int = 2, type: str | None = None, limit: int = 500) -> dict:
+def element_tree(ref: str, depth: int = 2, type: str | None = None, limit: int = 500) -> TreeResult:
     """Return a whole subtree in one call instead of repeated list_children.
 
     Result: {"Root", "Items": [{"Dbref", "Type", "Name", "Depth", "Owner"}], "Truncated"}.
@@ -142,7 +229,7 @@ def element_tree(ref: str, depth: int = 2, type: str | None = None, limit: int =
 
 
 @mcp.tool(annotations=READ_ONLY)
-def describe_element(ref: str) -> dict:
+def describe_element(ref: str) -> DescribeResult:
     """One-stop "what is this element": name, type, owner, the common attributes that exist for
     its type (DESC, FUNC, PURP, POS, ORI, BORE, PSPEC, ...; unset ones omitted) and a children
     summary (count per type, first 500 children).

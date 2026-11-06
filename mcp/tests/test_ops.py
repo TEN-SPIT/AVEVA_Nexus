@@ -246,7 +246,7 @@ def test_query_name_like_and_equi_mapping(nexus):
     nexus.handlers[("POST", "/api/Element/Query")] = {"Total": 1, "Offset": 0, "Limit": 100,
                                                       "Columns": ["dbref", "NAME"],
                                                       "Rows": [{"dbref": "=1/2", "NAME": "/P1"}]}
-    old = server.query_elements("EQUI", where="BORE gt 1", name_like="P*")
+    old = server.query_elements("EQUI", where="BORE gt 1", name_like="P*", compact=False)
     assert old["Rows"][0]["NAME"] == "/P1"  # old shape unchanged
     body = nexus.calls[0][3]
     assert body["type"] == "EQUIPMENT"
@@ -259,7 +259,7 @@ def test_query_compact_shape(nexus):
                                                       "Columns": ["dbref", "NAME"],
                                                       "Rows": [{"dbref": "=1/2", "NAME": "/P1"}]}
     out = server.query_elements("PIPE", name_like="*P*", compact=True)
-    assert out == {"total": 1, "offset": 0, "columns": ["dbref", "NAME"], "rows": [["=1/2", "/P1"]]}
+    assert out == {"total": 1, "offset": 0, "columns": ["dbref", "NAME"], "rows": [["=1/2", "/P1"]], "next_offset": None}
     assert nexus.calls[0][3]["where"] == "MATCHWILD(NAME,|*P*|)"
 
 

@@ -26,6 +26,8 @@ include = [
     "audit.py",
     "credstore.py",
     "e3d_launcher.py",
+    "guide.py",
+    "models.py",
     "nexus_client.py",
     "ops.py",
     "pml_dev.py",

@@ -320,10 +320,24 @@ def build_query(type_, scope, where, name_like, **rest) -> dict:
     return {k: v for k, v in body.items() if v is not None}
 
 
-def compact_table(data: dict) -> dict:
+def next_offset(data: dict, offset: int | None = None) -> int | None:
+    """Offset of the next page, or None when this page reached the end of the result."""
+    start = data.get("Offset")
+    if start is None:
+        start = offset or 0
+    rows = data.get("Rows") or []
+    nxt = start + len(rows)
+    total = data.get("Total")
+    if not rows or (total is not None and nxt >= total):
+        return None
+    return nxt
+
+
+def compact_table(data: dict, offset: int | None = None) -> dict:
     cols = data.get("Columns", [])
     out = {"total": data.get("Total"), "offset": data.get("Offset"), "columns": cols,
-           "rows": [[row.get(c) for c in cols] for row in data.get("Rows", [])]}
+           "rows": [[row.get(c) for c in cols] for row in data.get("Rows", [])],
+           "next_offset": next_offset(data, offset)}
     if data.get("Truncated"):
         out["truncated"] = True
     return out
