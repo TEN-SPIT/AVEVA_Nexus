@@ -407,6 +407,11 @@ def stop_e3d(project: str, force: bool = False) -> dict:
         return e3d_launcher.stop(project)
 
 
-if __name__ == "__main__":
+def main() -> None:
+    """Entry point (console script `nexus-mcp` and `python server.py`)."""
     audit.configure_logging()
     mcp.run()  # stdio transport by default
+
+
+if __name__ == "__main__":
+    main()

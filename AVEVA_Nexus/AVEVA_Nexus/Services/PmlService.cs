@@ -16,9 +16,11 @@ namespace AVEVA_Nexus.Services
     {
         private readonly IAvevaProvider _provider;
 
-        public PmlService()
+        public PmlService() : this(Providers.Create()) { }
+
+        public PmlService(IAvevaProvider provider)
         {
-            _provider = new AvevaProvider();
+            _provider = provider;
         }
 
         public bool Execute(string command)

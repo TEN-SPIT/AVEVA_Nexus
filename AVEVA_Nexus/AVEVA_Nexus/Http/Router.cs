@@ -1,5 +1,6 @@
 ﻿using AVEVA_Nexus.Controllers;
 using AVEVA_Nexus.Exceptions;
+using AVEVA_Nexus.Integration;
 using AVEVA_Nexus.Logging;
 using AVEVA_Nexus.Models;
 using AVEVA_Nexus.Validation;
@@ -17,11 +18,21 @@ namespace AVEVA_Nexus.Http
         private readonly ElementController _element;
         private readonly SessionController _session;
 
+        // Production path (SimpleHttpServer): each controller builds its services from Providers.Create(), as before.
         public Router()
         {
             _pml = new PmlController();
             _element = new ElementController();
             _session = new SessionController();
+        }
+
+        // Every controller and service shares the given provider (unit tests pass an in-memory one).
+        public Router(IAvevaProvider provider)
+        {
+            if (provider == null) throw new ArgumentNullException(nameof(provider));
+            _pml = new PmlController(provider);
+            _element = new ElementController(provider);
+            _session = new SessionController(provider);
         }
 
         //public object Route(RouteContext context)

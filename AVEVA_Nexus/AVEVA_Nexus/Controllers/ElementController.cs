@@ -4,6 +4,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
+using AVEVA_Nexus.Integration;
 using AVEVA_Nexus.Models;
 using AVEVA_Nexus.Services;
 using Newtonsoft.Json;
@@ -13,10 +14,18 @@ namespace AVEVA_Nexus.Controllers
     public class ElementController
     {
         private readonly ElementService _service;
+        // A new QueryService (and so, by default, a new provider) per query, as before the provider seam.
+        private readonly Func<QueryService> _queryService;
 
-        public ElementController()
+        public ElementController() : this(new ElementService(), () => new QueryService()) { }
+
+        public ElementController(IAvevaProvider provider)
+            : this(new ElementService(provider), () => new QueryService(provider)) { }
+
+        private ElementController(ElementService service, Func<QueryService> queryService)
         {
-            _service = new ElementService();
+            _service = service;
+            _queryService = queryService;
         }
 
         public ApiResponse Query(string json)
@@ -26,7 +35,7 @@ namespace AVEVA_Nexus.Controllers
             return new ApiResponse
             {
                 Success = true,
-                Data = new QueryService().Run(request)
+                Data = _queryService().Run(request)
             };
         }
 

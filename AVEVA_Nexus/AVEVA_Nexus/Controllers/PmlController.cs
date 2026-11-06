@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 
 using AVEVA_Nexus.Config;
 using AVEVA_Nexus.Exceptions;
+using AVEVA_Nexus.Integration;
 using AVEVA_Nexus.Models;
 using AVEVA_Nexus.Services;
 using Newtonsoft.Json;
@@ -16,9 +17,13 @@ namespace AVEVA_Nexus.Controllers
     {
         private readonly PmlService _service;
 
-        public PmlController()
+        public PmlController() : this(new PmlService()) { }
+
+        public PmlController(IAvevaProvider provider) : this(new PmlService(provider)) { }
+
+        private PmlController(PmlService service)
         {
-            _service = new PmlService();
+            _service = service;
         }
 
         public ApiResponse Run(string json)

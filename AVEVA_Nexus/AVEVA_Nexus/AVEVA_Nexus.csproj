@@ -111,6 +111,7 @@
     <Compile Include="Integration\AvevaGate.cs" />
     <Compile Include="Integration\AvevaProvider.cs" />
     <Compile Include="Integration\IAvevaProvider.cs" />
+    <Compile Include="Integration\Providers.cs" />
     <Compile Include="Logging\NexusLogger.cs" />
     <Compile Include="Logging\Trace.cs" />
     <Compile Include="Models\ApiResponse.cs" />

@@ -683,7 +683,10 @@ Windows, PowerShell, E3D 3.1 installed (its DLLs are used as references) and Vis
 ```powershell
 scripts\build.ps1                    # -> out\AVEVA_Nexux_Addin.dll
 scripts\run-tests.ps1                # unit tests, no E3D needed
-scripts\deploy-local.ps1 -Target <runtime folder> -Project <code> [-Writable]   # rebuild and restart a local E3D TTY session
+scripts\install-runtime.ps1 -Runtime <runtime folder> [-Force]   # create/update a runtime from launcher\ (keeps config\projects.json)
+scripts\deploy-local.ps1 -Runtime <runtime folder>             # build into versions\<version> and point current.txt at it
+scripts\deploy-local.ps1 -Runtime <runtime folder> -Restart -Project <code> [-Writable]   # ... and restart the TTY session
+scripts\deploy-local.ps1 -Runtime <runtime folder> -Rollback  # back to the previous version
 python -m pytest tests/integration -m "not readonly"   # against a session started with -Writable
 python -m pytest tests/integration -m "not writable"   # against a session started in the default read-only mode
 ```

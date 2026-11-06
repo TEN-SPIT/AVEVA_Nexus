@@ -1,0 +1,15 @@
+{
+  "DEMO": {
+    "product": "E3D",
+    "module3d": "DESIGN",
+    "module": "DESIGN",
+    "init": "C:\\Program Files (x86)\\AVEVA\\Everything3D3.1\\E3Dinit.cmd",
+    "mon": "C:\\Program Files (x86)\\AVEVA\\Everything3D3.1\\mon.exe",
+    "project": "DEMO",
+    "user": "SYSTEM",
+    "auth": "password",
+    "mdb": "/DEMO",
+    "port": 5001,
+    "write_dbs": ["*/DESI/DEMO-MCP-TEST"]
+  }
+}
