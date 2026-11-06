@@ -49,7 +49,7 @@ claude mcp add nexus --scope user -- <path-to>\uv.exe run --directory <repo>\mcp
 | Tool | What it does |
 |---|---|
 | `session_info` | Project, MDB, user, module, E3D version, read-only flag |
-| `query_elements` | Find elements by type, scope, PML condition or `name_like` wildcard; read attributes; paging; `compact=true` returns columns + row lists (fewer tokens) |
+| `query_elements` | Find elements by type, scope, PML condition or `name_like` wildcard; read attributes; paging; `compact=true` (default) returns columns + row lists (fewer tokens); both shapes include `next_offset` (null on the last page) |
 | `count_elements` | Just the total for a type/scope/condition |
 | `get_attributes` | Read attributes of many known elements in one call |
 | `list_children` | Walk the hierarchy: owner and children, optional type filter |
@@ -70,6 +70,28 @@ Element types are full names; `EQUI` is accepted by `query_elements` and mapped 
 
 The server keeps one keep-alive HTTP connection to Nexus (5 s connect timeout, 60 s read, 180 s for PML). Tools that
 need the newer Nexus routes (`Batch`, `Element/Resolve`, `Element/Tree`) detect a 404 and fall back to older routes.
+
+## Resources
+Read-only context a client can attach without a tool call.
+
+| URI | Content |
+|---|---|
+| `nexus://session` | Same as `session_info` |
+| `nexus://projects` | Same as `e3d_projects` (names, ports, modes; never credentials) |
+| `nexus://attributes/{type}` | Valid attributes of an element type (template; cached per process; `EQUI` maps to `EQUIPMENT`) |
+| `nexus://guide/pml` | Short PML cheat-sheet for `run_pml` (items not verified against E3D are marked) |
+| `nexus://guide/safety` | Write rules: read-only default, `write_dbs`, `save_work`, refused constructs |
+
+## Prompts
+User-invocable templates: `explore_site(site)`, `test_pml_function(name)`, `safe_edit(task)`
+(plan, `run_pml` in allowed databases, verify, ask before `save_work`) and `audit_zone(zone)`
+(generic read-only audit).
+
+## Structured output and naming
+`query_elements`, `count_elements`, `element_tree` and `describe_element` have typed return models
+(`models.py`), so the SDK publishes an `outputSchema`. Convention: keys coming from Nexus keep its
+PascalCase (`Total`, `Rows`, `Items`); fields added by this server are lowercase snake_case
+(`next_offset`, and the existing `describe_element` keys). Existing keys were not renamed.
 
 ### Testing PML without a person in the loop
 `run_pml` wraps every script with E3D's `ALPHA LOG /<file>` and returns the file as `Log`. It holds the
