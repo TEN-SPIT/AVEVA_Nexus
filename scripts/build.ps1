@@ -20,7 +20,8 @@ if (-not $csc -or -not (Test-Path $csc)) { $csc = 'C:\Program Files (x86)\Micros
 if (-not (Test-Path $csc)) { throw "Roslyn csc.exe not found: $csc (set NEXUS_CSC)" }
 
 $src = Join-Path $repo 'AVEVA_Nexus\AVEVA_Nexus'
-$newtonsoft = Join-Path $repo 'AVEVA_Nexus\packages\Newtonsoft.Json.13.0.1\lib\net45\Newtonsoft.Json.dll'
+# $env:NEXUS_NEWTONSOFT overrides the git-ignored package folder (CI, worktrees), as in run-tests.ps1.
+$newtonsoft = if ($env:NEXUS_NEWTONSOFT) { $env:NEXUS_NEWTONSOFT } else { Join-Path $repo 'AVEVA_Nexus\packages\Newtonsoft.Json.13.0.1\lib\net45\Newtonsoft.Json.dll' }
 New-Item -ItemType Directory -Force $Out | Out-Null
 
 $files = Get-ChildItem $src -Recurse -Filter *.cs | Where-Object { $_.FullName -notmatch '\\(obj|bin)\\' } | ForEach-Object { '"' + $_.FullName + '"' }
