@@ -72,6 +72,8 @@ BYPASSES = {
     "after a quote string holding a bar": "!x = 'a|' sav",
     "synonym": "$S X=SAVEWORK\nX",
     "synonym after then": "if (true) then $s X=SAV",
+    "rehash all (rewrites shared pml.index files)": "PML REHASH ALL",
+    "rehash all lower": "pml rehash all",
 }
 
 
@@ -140,6 +142,7 @@ LEGIT = {
     "dollar in string": "!s = |cost $M|",
     "modelling": "NEW EQUI /SAVE-ZONE-P1\nPOS E 100 N 200 U 0\nORI X IS E AND Z IS U\nNEW BOX XLEN 100 YLEN 100 ZLEN 100",
     "string saving": "!!a = 'saving'",
+    "rehash first folder only": "PML REHASH",
 }
 
 

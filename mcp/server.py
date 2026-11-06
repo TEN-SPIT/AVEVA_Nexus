@@ -178,7 +178,8 @@ def call_pml_function(name: str, args: list[str | int | float | bool] | None = N
     run_pml for those.
 
     - name: identifier only, with or without "!!" (e.g. "mcpecho"). The function must be loaded
-      (for a new sandbox file run "PML REHASH ALL" first).
+      (for a new sandbox file run "PML REHASH" first; never "PML REHASH ALL", which rewrites
+      the pml.index of every PMLLIB folder, shared server folders included).
     - args: positional arguments.
     - returns: False for functions that return nothing (otherwise assigning the result fails).
     """
@@ -277,7 +278,8 @@ def save_pml(kind: str, name: str, content: str) -> dict:
 
     Use this to test functions and objects without asking the user to copy files around. E3D
     finds the file by name and reloads it automatically when you save it again. For a NEW
-    file, run "PML REHASH ALL" once with run_pml before calling it.
+    file, run "PML REHASH" once with run_pml before calling it (it re-indexes only the first PMLLIB
+    folder, where the sandbox lives; "PML REHASH ALL" is refused: it rewrites shared index files).
 
     Forms cannot be loaded in the headless session (no graphics), so put the logic you want
     to test in functions or objects and keep the form thin.

@@ -1,0 +1,22 @@
+--|------------------------------------------------------------------------------------------------
+
+-- Direccion de Nexus en esta sesion, p. ej. 'http://localhost:5001/'.
+-- Con la DLL nueva se la pregunta al servidor (HostConfig.Prefix: la real, aunque lo arrancara otra
+-- macro); si no, la que usaria !!nexusstart() con el puerto de !!nexusport().
+
+define function !!nexusurl() is STRING
+
+    !url = 'http://localhost:' & !!nexusport() & '/'
+
+    !prefix = ''
+    !prefix = !!nexusHost.Prefix()
+    handle any
+        !prefix = ''
+    endhandle
+    if !prefix.length() GT 0 then
+        !url = !prefix
+    endif
+
+    return !url
+
+endfunction

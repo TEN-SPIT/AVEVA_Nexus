@@ -8,13 +8,21 @@
   the script prints (run\<code>-gui\Start-Nexus-GUI.pmlmac, generated with the current DLL path).
   The password comes from the Windows Credential Manager if stored (scripts\set-e3d-login.ps1 in the repo).
   The repo (for mcp\credstore.py) is $env:NEXUS_REPO, or "repo" in config\runtime.json, or ..\AVEVA_Nexus.
+  -Panel also opens the "Nexus MCP" panel (form !!nexusmcp: Iniciar / Parar, Lectura / Edicion) at startup.
+  It does not need NexusMCP in the project PMLLIB: the PML of pmllib\NexusMCP (repo, else <runtime>\package\NexusMCP)
+  is copied to run\<code>-gui\pmllib and put first on PMLLIB through a copy of the project init file
+  (prepending it on the command line does not work: evars.init, called by the init file, resets PMLLIB).
+  -ReadOnly does not set NEXUS_READONLY=0: Nexus starts read-only and write access is switched on from the
+  panel (Edicion) or with !!nexusstart(TRUE). Recommended:  -Panel -ReadOnly
   Use it only with a test MDB: any PML sent through Nexus can change the model.
 #>
 param(
     [string]$Project,
     [switch]$Prompt,       # ask for the password even if one is stored
-    [switch]$NoAutoNexus,  # do not start Nexus by itself (then run the generated Start-Nexus-GUI.pmlmac by hand)
-    [switch]$UiDispatch    # NEXUS_UI_DISPATCH=1: Nexus runs E3D work on the E3D user-interface thread (test of the GUI hang)
+    [switch]$NoAutoNexus,  # do not start Nexus by itself (then run the generated Start-Nexus-GUI.pmlmac by hand, or use the panel)
+    [switch]$UiDispatch,   # NEXUS_UI_DISPATCH=1: Nexus runs E3D work on the E3D user-interface thread (test of the GUI hang)
+    [switch]$Panel,        # open the Nexus MCP panel at startup (without touching the project PMLLIB)
+    [switch]$ReadOnly      # do not set NEXUS_READONLY=0: Nexus starts read-only (switch to Edicion from the panel)
 )
 
 $ErrorActionPreference = 'Stop'
@@ -78,19 +86,55 @@ endhandle
 "@ | Set-Content $nexusMacro -Encoding ASCII
 Copy-Item (Join-Path $root 'Stop-Nexus-GUI.pmlmac') $runDir -Force
 
-# Startup macro: enter the module and start Nexus, so nothing has to be typed in E3D.
+# -Panel: the NexusMCP PML (functions + form) goes to run\<code>-gui\pmllib, first on PMLLIB. The project init file
+# calls evars.init, which does "set pmllib=...", so a PMLLIB set on the command line is lost; instead E3D gets a copy
+# of the project init file with one line more at the end. It is regenerated at every launch, so it follows the original.
+$init = $cfg.init
+$panelLines = ''
+if ($Panel) {
+    $pkgSrc = Join-Path (Get-NexusRepoDir $root) 'pmllib\NexusMCP'
+    if (-not (Test-Path (Join-Path $pkgSrc 'forms\nexusmcp.pmlfrm'))) { $pkgSrc = Join-Path $root 'package\NexusMCP' }
+    if (-not (Test-Path (Join-Path $pkgSrc 'forms\nexusmcp.pmlfrm'))) { throw "NexusMCP PML not found (repo pmllib\NexusMCP or $root\package\NexusMCP)" }
+    $pmllib = Join-Path $runDir 'pmllib'
+    if ($pmllib -match ' ') { throw "-Panel needs a runtime path without spaces (PMLLIB entry: $pmllib)" }
+    $pkgDest = Join-Path $pmllib 'NexusMCP'
+    if (Test-Path $pmllib) { Remove-Item $pmllib -Recurse -Force }
+    New-Item -ItemType Directory -Force $pkgDest | Out-Null
+    foreach ($sub in 'functions', 'forms') { Copy-Item (Join-Path $pkgSrc $sub) $pkgDest -Recurse -Force }
+    # PML must be CRLF; forms keep a UTF-8 BOM (without it E3D reads the file as ANSI and the accents break).
+    Get-ChildItem $pkgDest -Recurse -Include *.pmlfnc, *.pmlfrm | ForEach-Object {
+        $text = [IO.File]::ReadAllText($_.FullName) -replace "`r?`n", "`r`n"
+        [IO.File]::WriteAllText($_.FullName, $text, (New-Object Text.UTF8Encoding($_.Extension -eq '.pmlfrm')))
+    }
+    $init = Join-Path $runDir 'e3d-panel.init'
+    $initText = ([IO.File]::ReadAllText($cfg.init)).TrimEnd() + "`r`n`r`nrem Added by Start-E3D-GUI-Writable.ps1 -Panel (NexusMCP panel)`r`nset PMLLIB=$pmllib;%PMLLIB%`r`n"
+    [IO.File]::WriteAllText($init, $initText, (New-Object Text.ASCIIEncoding))
+    # DLL for the panel's Iniciar (!!nexusstart uses !!nexusDll before looking next to the PML), port,
+    # rescan of the first PMLLIB folder (ours) and the panel.
+    $panelLines = @"
+!!nexusDll = '$addin'
+!!nexusPort = '$port'
+pml rehash
+!!nexuspanel()
+"@
+}
+
+# Startup macro: enter the module, start Nexus (unless -NoAutoNexus) and open the panel (-Panel).
 $macro = Join-Path $runDir 'gui-session.pmlmac'
+$startLine = if ($NoAutoNexus) { '' } else { "`$M/$nexusMacro" }
 @"
 $($cfg.module)
-`$M/$nexusMacro
+$startLine
+$panelLines
 "@ | Set-Content $macro -Encoding ASCII
-$last = if ($NoAutoNexus) { $cfg.module } else { "`$M/$macro" }
+$last = if ($NoAutoNexus -and -not $Panel) { $cfg.module } else { "`$M/$macro" }
 
-$launchArgs = @($cfg.product, $cfg.module3d, 'init', "`"$($cfg.init)`"", $cfg.project, $userPass, $cfg.mdb, $last)
+$launchArgs = @($cfg.product, $cfg.module3d, 'init', "`"$init`"", $cfg.project, $userPass, $cfg.mdb, $last)
 $ui = if ($UiDispatch) { 'set NEXUS_UI_DISPATCH=1&& ' } else { '' }
+$ro = if ($ReadOnly) { '' } else { 'set NEXUS_READONLY=0&& ' }
 # Launched through WMI (detached), with the environment on the cmd line: a WMI process does not inherit it.
-$cmd = "cmd /c set NEXUS_READONLY=0&& $ui`"$($cfg.mon)`" $($launchArgs -join ' ')"
+$cmd = "cmd /c $ro$ui`"$($cfg.mon)`" $($launchArgs -join ' ')"
 $r = Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{ CommandLine = $cmd; CurrentDirectory = (Split-Path $cfg.mon) }
 $plain = $null; $userPass = $null; $cmd = $null
 if ($r.ReturnValue -ne 0) { throw "WMI Create failed (code $($r.ReturnValue))" }
-"Launched graphical E3D for $Project with NEXUS_READONLY=0" + $(if ($UiDispatch) { ' and NEXUS_UI_DISPATCH=1' } else { '' }) + $(if ($NoAutoNexus) { "; to start Nexus run in E3D: `$M/$nexusMacro" } else { "; Nexus starts by itself on port $port" })
+"Launched graphical E3D for $Project " + $(if ($ReadOnly) { 'read-only (switch to Edicion from the panel)' } else { 'with NEXUS_READONLY=0' }) + $(if ($Panel) { ', with the Nexus MCP panel' } else { '' }) + $(if ($UiDispatch) { ' and NEXUS_UI_DISPATCH=1' } else { '' }) + $(if ($NoAutoNexus) { "; to start Nexus run in E3D: `$M/$nexusMacro" } else { "; Nexus starts by itself on port $port" })

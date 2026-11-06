@@ -1,0 +1,238 @@
+﻿--|------------------------------------------------------------------------------------------------
+--| Panel "Nexus MCP": arranca y para Nexus (la pasarela HTTP que usa Claude / MCP) dentro de ESTA
+--| sesion de E3D y cambia su modo entre solo lectura y edicion, sin lanzadores especiales.
+--|
+--|     !!nexuspanel()          abre el panel (boton "Nexus" de la cinta)
+--|
+--| Por debajo llama a !!nexusstart(writable) y !!nexusstop(), con !!nexusQuiet = TRUE para que los
+--| mensajes salgan en la linea de estado del panel en vez de en avisos.
+--|
+--| Pruebas automaticas: !!nexusmcp.skipconfirm = TRUE omite la confirmacion al pasar a Edicion
+--| (por defecto FALSE: siempre se pregunta).
+--|------------------------------------------------------------------------------------------------
+
+setup form !!nexusmcp dialog
+
+    !this.formtitle = 'Nexus MCP'
+    !this.initcall  = '!this.refresh()'
+
+    member .skipconfirm is BOOLEAN
+
+    -- texto (no editable) y no 'para': un 'para' no pinta el color de fondo
+    text   .state '' at x1 y0.5 width 44 is STRING
+    para   .url   at x1 ymax text '' width 44
+    para   .info  at x1 ymax text '' width 44
+
+    rgroup .mode 'Modo' FRAME horizontal at x1 ymax+0.4 callback '!this.modechanged()'
+        add tag 'Lectura' select 'RO'
+        add tag 'Edición' select 'RW'
+    exit
+
+    para   .msg at x1 ymax+0.4 text '' width 44 height 3
+
+    button .bstart   'Iniciar'    at x1 ymax+0.4 tooltip 'Inicia Nexus en esta sesion con el modo elegido' callback '!this.startserver()' width 10
+    button .bstop    'Parar'      at xmax+1 ymin tooltip 'Para Nexus en esta sesion (Claude deja de tener acceso)' callback '!this.stopserver()' width 10
+    button .brefresh 'Actualizar' at xmax+1 ymin tooltip 'Vuelve a leer el estado de Nexus' callback '!this.refresh()' width 10
+
+exit
+
+--|------------------------------------------------------------------------------------------------
+define method .nexusmcp()
+    !this.skipconfirm = FALSE
+    !this.state.seteditable(FALSE)
+    handle any
+    endhandle
+endmethod
+
+--|------------------------------------------------------------------------------------------------
+-- TRUE si Nexus permite escribir ahora. DLL nueva: HostConfig.IsWritable. DLL antigua: lo que
+-- aplico por ultima vez !!nexusstart (!!nexusWritable) o, si no, la variable NEXUS_READONLY con la
+-- que arranco E3D (PML no ve los cambios que hace la DLL en el entorno).
+define method .iswritable() is BOOLEAN
+    !answer = FALSE
+    !known = TRUE
+    !answer = !!nexusHost.IsWritable()
+    handle any
+        !known = FALSE
+    endhandle
+    if !known then
+        return !answer
+    endif
+
+    !known = TRUE
+    !answer = !!nexusWritable
+    handle any
+        !known = FALSE
+    endhandle
+    if !known then
+        return !answer
+    endif
+
+    !ro = ''
+    var !ro evar 'NEXUS_READONLY'
+    handle any
+    endhandle
+    return !ro EQ '0'
+endmethod
+
+--|------------------------------------------------------------------------------------------------
+-- Texto de version de la DLL cargada.
+define method .version() is STRING
+    !exists = TRUE
+    !host = !!nexusHost
+    handle any
+        !exists = FALSE
+    endhandle
+    if not !exists then
+        return 'DLL de Nexus aún no cargada (se carga al Iniciar)'
+    endif
+
+    !ver = ''
+    !ver = !host.Version()
+    handle any
+        return 'DLL de Nexus antigua (sin número de versión)'
+    endhandle
+    !text = 'Nexus ' & !ver
+    !mode = ''
+    !mode = !host.DispatchMode()
+    handle any
+        !mode = ''
+    endhandle
+    if !mode.length() GT 0 then
+        !text = !text & '   (llamadas: ' & !mode & ')'
+    endif
+    return !text
+endmethod
+
+--|------------------------------------------------------------------------------------------------
+-- Colorea la linea de estado; si esta version de E3D no lo permite, solo queda el texto.
+define method .paint(!colour is STRING)
+    !this.state.background = !colour
+    handle any
+    endhandle
+endmethod
+
+--|------------------------------------------------------------------------------------------------
+define method .refresh()
+    !running = !!nexusisrunning()
+    !url = !!nexusurl()
+
+    if !running then
+        !writable = !this.iswritable()
+        if !writable then
+            !this.state.val = 'Nexus: ACTIVO   -   modo EDICIÓN'
+            !this.paint('orange')
+            !this.mode.val = 2
+        else
+            !this.state.val = 'Nexus: ACTIVO   -   modo SOLO LECTURA'
+            !this.paint('green')
+            !this.mode.val = 1
+        endif
+        !this.url.val = 'Escuchando en ' & !url
+        !this.bstart.active = FALSE
+        !this.bstop.active = TRUE
+    else
+        !this.state.val = 'Nexus: PARADO'
+        !this.paint('grey')
+        !this.url.val = 'Al iniciar escuchará en ' & !url
+        !this.bstart.active = TRUE
+        !this.bstop.active = FALSE
+    endif
+    !this.info.val = !this.version()
+endmethod
+
+--|------------------------------------------------------------------------------------------------
+-- Pregunta antes de dar permiso de escritura (se omite con !this.skipconfirm = TRUE).
+define method .confirmwrite() is BOOLEAN
+    if !this.skipconfirm then
+        return TRUE
+    endif
+    !text = 'Modo EDICIÓN: Claude podrá MODIFICAR el modelo desde esta sesión de E3D, pero solo en las bases de datos autorizadas en el MCP (write_dbs), y solo guardará con su herramienta save_work (que guarda también tus cambios pendientes en esa base).$N$N¿Activar el modo Edición?'
+    !answer = !!alert.question(!text)
+    return !answer.upcase() EQ 'YES'
+endmethod
+
+--|------------------------------------------------------------------------------------------------
+-- Llama a !!nexusstart / !!nexusstop sin avisos y deja su mensaje en la linea de estado.
+define method .apply(!action is STRING, !writable is BOOLEAN)
+    !!nexusLastMsg = ''
+    !!nexusLastErr = FALSE
+    !!nexusQuiet = TRUE
+    if !action EQ 'stop' then
+        !!nexusstop()
+        handle any
+            !!nexusLastMsg = 'Error al parar Nexus: ' & !!error.text
+            !!nexusLastErr = TRUE
+        endhandle
+    else
+        !!nexusstart(!writable)
+        handle any
+            !!nexusLastMsg = 'Error al iniciar Nexus: ' & !!error.text
+            !!nexusLastErr = TRUE
+        endhandle
+    endif
+    !!nexusQuiet = FALSE
+
+    !this.refresh()
+    !text = !!nexusLastMsg
+    if !!nexusLastErr then
+        !text = 'ERROR: ' & !text
+    endif
+    !this.msg.val = !text
+endmethod
+
+--|------------------------------------------------------------------------------------------------
+define method .startserver()
+    !writable = !this.mode.val EQ 2
+    if !writable then
+        if not !this.confirmwrite() then
+            !this.mode.val = 1
+            !this.msg.val = 'Cancelado: no se ha iniciado Nexus.'
+            return
+        endif
+    endif
+    !this.apply('start', !writable)
+endmethod
+
+--|------------------------------------------------------------------------------------------------
+define method .stopserver()
+    !this.apply('stop', FALSE)
+endmethod
+
+--|------------------------------------------------------------------------------------------------
+-- Cambio de la opcion Lectura / Edicion: con Nexus en marcha se aplica en el momento; parado, se
+-- aplicara al pulsar Iniciar.
+define method .modechanged()
+    !writable = !this.mode.val EQ 2
+    if not !!nexusisrunning() then
+        if !writable then
+            !this.msg.val = 'Se iniciará en modo EDICIÓN al pulsar Iniciar.'
+        else
+            !this.msg.val = 'Se iniciará en modo SOLO LECTURA al pulsar Iniciar.'
+        endif
+        return
+    endif
+
+    if !writable EQ !this.iswritable() then
+        return
+    endif
+    if !writable then
+        if not !this.confirmwrite() then
+            !this.mode.val = 1
+            !this.msg.val = 'Cancelado: sigue en SOLO LECTURA.'
+            return
+        endif
+    endif
+    !this.apply('start', !writable)
+endmethod
+
+--|------------------------------------------------------------------------------------------------
+-- Para las pruebas y la ventana de comandos: elegir el modo como si se pulsara la opcion.
+define method .setmode(!writable is BOOLEAN)
+    if !writable then
+        !this.mode.val = 2
+    else
+        !this.mode.val = 1
+    endif
+    !this.modechanged()
+endmethod

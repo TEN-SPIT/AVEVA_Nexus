@@ -58,6 +58,8 @@ _SYNONYM_CMD = re.compile(_STATEMENT_START + r"\$[sS]\b")
 _MACRO_CMD = re.compile(_STATEMENT_START + r"\$[mM]\b")
 _EXPAND_CMD = re.compile(_STATEMENT_START + r"\$!")
 _ALPHA_LOG = re.compile(_STATEMENT_START + r"(?i:alp\w*\s+log)\b")
+# PML REHASH ALL rewrites the pml.index of EVERY PMLLIB folder, shared server folders included.
+_REHASH_ALL = re.compile(r"(?i)\bpml\s+reh\w*\s+all\b")
 _FILE_IO = re.compile(
     r"(?i)\bobject\s+(?:file|[\w.]*\bio\b)|\.\s*(?:writefile|readfile|open|writerecord|readrecord|"
     r"writeline|readline|copyfile|deletefile|appendfile)\s*\("
@@ -105,6 +107,8 @@ def forbidden_in_writable(text: str) -> str | None:
             return "Running a command built from a variable ($!x / $!!x as a statement) is not allowed: it cannot be checked."
         if _FILE_IO.search(line):
             return "File input/output (object FILE, .open/.writefile ...) is not allowed in writable runs."
+        if _REHASH_ALL.search(line):
+            return "PML REHASH ALL is not allowed: it rewrites the pml.index of every PMLLIB folder, shared server folders included. Use PML REHASH (first folder only, where the sandbox lives)."
         if _ALPHA_LOG.search(line):
             return "ALPHA LOG is not allowed: the server owns the log file."
     return None

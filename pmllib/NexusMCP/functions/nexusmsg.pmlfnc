@@ -5,17 +5,34 @@
 --
 --     !!nexusmsg('texto', FALSE)     informacion
 --     !!nexusmsg('texto', TRUE)      error
+--
+-- El ultimo mensaje queda en !!nexusLastMsg (y !!nexusLastErr = TRUE si era un error).
+-- Con !!nexusQuiet = TRUE no se abre ningun aviso: el panel !!nexusmcp lo usa para mostrar el
+-- mensaje en su propia linea de estado (y para que un aviso modal no bloquee E3D).
 
 define function !!nexusmsg(!text is STRING, !iserror is BOOLEAN)
 
     $P NEXUS: $!text
+    !!nexusLastMsg = !text
+    !!nexusLastErr = !iserror
 
+    !quiet = FALSE
+    !quiet = !!nexusQuiet
     handle any
-        if !iserror then
-            !!alert.error(!text)
-        else
-            !!alert.message(!text)
-        endif
+        !quiet = FALSE
     endhandle
+    if !quiet then
+        return
+    endif
+
+    if !iserror then
+        !!alert.error(!text)
+        handle any
+        endhandle
+    else
+        !!alert.message(!text)
+        handle any
+        endhandle
+    endif
 
 endfunction
