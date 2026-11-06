@@ -1,0 +1,252 @@
+{
+  "description": "Generic data-quality rules for piping and equipment in AVEVA E3D. Copy and adapt in a NEXUS_AUDIT_RULES pack for project conventions.",
+  "rules": [
+    {
+      "id": "PIPE-SPEC",
+      "title": {
+        "en": "Pipe or branch without piping spec",
+        "es": "Tubería o ramal sin especificación"
+      },
+      "severity": "error",
+      "kind": "required",
+      "types": [
+        "PIPE",
+        "BRAN"
+      ],
+      "params": {
+        "attributes": [
+          "PSPEC"
+        ]
+      }
+    },
+    {
+      "id": "PIPE-BORE-RANGE",
+      "title": {
+        "en": "Pipe bore missing or out of range (mm)",
+        "es": "Diámetro de tubería fuera de rango (mm)"
+      },
+      "severity": "warning",
+      "kind": "range",
+      "types": [
+        "PIPE"
+      ],
+      "params": {
+        "attribute": "BORE",
+        "min": 1,
+        "max": 3000
+      },
+      "default": false,
+      "note": "Opt-in: PIPE BORE is often 0mm in real models because the bore that matters is the branch's (BRAN-BORE-RANGE). Enable it for projects that set the pipe bore."
+    },
+    {
+      "id": "BRAN-BORE-RANGE",
+      "title": {
+        "en": "Branch head bore out of range (mm)",
+        "es": "Diámetro de cabeza de ramal fuera de rango (mm)"
+      },
+      "severity": "warning",
+      "kind": "range",
+      "types": [
+        "BRAN"
+      ],
+      "params": {
+        "attribute": "HBOR",
+        "min": 1,
+        "max": 3000
+      }
+    },
+    {
+      "id": "PIPE-INSULATION-SPEC",
+      "title": {
+        "en": "Pipe without insulation spec",
+        "es": "Tubería sin especificación de aislamiento"
+      },
+      "severity": "info",
+      "kind": "required",
+      "types": [
+        "PIPE"
+      ],
+      "default": false,
+      "params": {
+        "attributes": [
+          "ISPEC"
+        ]
+      }
+    },
+    {
+      "id": "BRAN-HEAD-UNCONNECTED",
+      "title": {
+        "en": "Branch head not connected",
+        "es": "Cabeza de ramal sin conectar"
+      },
+      "severity": "warning",
+      "kind": "reference",
+      "types": [
+        "BRAN"
+      ],
+      "params": {
+        "attributes": [
+          "HREF"
+        ],
+        "skip_when": {
+          "HCON": [
+            "OPEN",
+            "CLOS",
+            "VENT",
+            "DRAN"
+          ]
+        }
+      }
+    },
+    {
+      "id": "BRAN-TAIL-UNCONNECTED",
+      "title": {
+        "en": "Branch tail not connected",
+        "es": "Cola de ramal sin conectar"
+      },
+      "severity": "warning",
+      "kind": "reference",
+      "types": [
+        "BRAN"
+      ],
+      "params": {
+        "attributes": [
+          "TREF"
+        ],
+        "skip_when": {
+          "TCON": [
+            "OPEN",
+            "CLOS",
+            "VENT",
+            "DRAN"
+          ]
+        }
+      }
+    },
+    {
+      "id": "BRAN-HEAD-SHARED",
+      "title": {
+        "en": "Several branch heads connected to the same element",
+        "es": "Varias cabezas de ramal conectadas al mismo elemento"
+      },
+      "severity": "info",
+      "kind": "unique",
+      "types": [
+        "BRAN"
+      ],
+      "params": {
+        "attribute": "HREF"
+      }
+    },
+    {
+      "id": "COMP-SPREF",
+      "title": {
+        "en": "Piping component without catalogue reference (SPREF)",
+        "es": "Componente de tubería sin referencia de catálogo (SPREF)"
+      },
+      "severity": "error",
+      "kind": "reference",
+      "types": [
+        "ELBO",
+        "BEND",
+        "TEE",
+        "VALV",
+        "FLAN",
+        "GASK",
+        "REDU",
+        "CAP",
+        "OLET",
+        "COUP",
+        "CROS",
+        "PCOM",
+        "INST",
+        "FILT",
+        "TRAP",
+        "UNIO",
+        "VTWA"
+      ],
+      "params": {
+        "attributes": [
+          "SPREF"
+        ]
+      }
+    },
+    {
+      "id": "NOZZ-CATREF",
+      "title": {
+        "en": "Nozzle without catalogue reference (CATREF)",
+        "es": "Tobera sin referencia de catálogo (CATREF)"
+      },
+      "severity": "error",
+      "kind": "reference",
+      "types": [
+        "NOZZ"
+      ],
+      "params": {
+        "attributes": [
+          "CATREF"
+        ]
+      }
+    },
+    {
+      "id": "EQUI-EMPTY",
+      "title": {
+        "en": "Equipment without primitives, sub-equipment or nozzles",
+        "es": "Equipo sin primitivas, subequipos ni toberas"
+      },
+      "severity": "warning",
+      "kind": "children",
+      "types": [
+        "EQUIPMENT"
+      ],
+      "params": {}
+    },
+    {
+      "id": "PIPE-NO-BRANCH",
+      "title": {
+        "en": "Pipe without branches",
+        "es": "Tubería sin ramales"
+      },
+      "severity": "warning",
+      "kind": "children",
+      "types": [
+        "PIPE"
+      ],
+      "params": {
+        "child_types": [
+          "BRAN"
+        ]
+      }
+    },
+    {
+      "id": "ZONE-EMPTY",
+      "title": {
+        "en": "Empty zone",
+        "es": "Zona vacía"
+      },
+      "severity": "info",
+      "kind": "children",
+      "types": [
+        "ZONE"
+      ],
+      "params": {}
+    },
+    {
+      "id": "NAME-CONVENTION",
+      "title": {
+        "en": "Name with spaces or lower-case letters",
+        "es": "Nombre con espacios o minúsculas"
+      },
+      "severity": "info",
+      "kind": "pattern",
+      "types": [
+        "EQUIPMENT",
+        "PIPE"
+      ],
+      "params": {
+        "attribute": "NAME",
+        "regex": "/[^\\sa-z]+"
+      }
+    }
+  ]
+}

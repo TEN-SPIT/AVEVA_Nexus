@@ -24,19 +24,22 @@ dev = [
 [tool.hatch.build.targets.wheel]
 include = [
     "audit.py",
+    "audit_tools.py",
     "credstore.py",
     "e3d_launcher.py",
     "guide.py",
+    "model_audit.py",
     "models.py",
     "nexus_client.py",
     "ops.py",
     "pml_dev.py",
     "server.py",
     "write_guard.py",
+    "rules/*.json",
 ]
 
 [tool.hatch.build.targets.sdist]
-include = ["*.py", "README.md", "pyproject.toml", "tests/**"]
+include = ["*.py", "rules/*.json", "README.md", "pyproject.toml", "tests/**"]
 
 [tool.pytest.ini_options]
 pythonpath = ["."]
